@@ -70,6 +70,7 @@ public:
       pgid(p),
       begin(be), end(en) {
   }
+  uint64_t cost() { return 4<<20; }  // DNM: make it cost as much as a big write
 private:
   ~MOSDPGScan() {}
 
