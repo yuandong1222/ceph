@@ -325,6 +325,17 @@ public:
     return (Message *)RefCountedObject::get();
   }
 
+  /**
+   * Returns the "cost" of dispatching the message
+   *
+   * The "cost" of a write should be the amount of data.
+   * Other messages should have costs tuned relative to
+   * that.
+   */
+  virtual uint64_t cost() {
+    return get_data().length();
+  }
+
 protected:
   virtual ~Message() { 
     assert(nref.read() == 0);
