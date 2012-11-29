@@ -6609,6 +6609,7 @@ int ReplicatedPG::recover_backfill(int max)
       epoch_t e = get_osdmap()->get_epoch();
       MOSDPGScan *m = new MOSDPGScan(MOSDPGScan::OP_SCAN_GET_DIGEST, e, e, info.pgid,
 				     pbi.end, hobject_t());
+      m->set_priority(g_conf->osd_recovery_op_priority);
       osd->cluster_messenger->send_message(m, get_osdmap()->get_cluster_inst(backfill_target));
       waiting_on_backfill = true;
       start_recovery_op(pbi.end);
