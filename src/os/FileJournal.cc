@@ -292,6 +292,27 @@ int FileJournal::_open_file(int64_t oldsize, blksize_t blksize,
 	   << newsize << " bytes: " << cpp_strerror(err) << dendl;
       return -err;
     }
+#ifdef __APPLE__
+    fstore_t store = {F_ALLOCATECONTIG, F_PEOFPOSMODE, 0, newsize};
+    ret = ::fcntl(fd, F_PREALLOCATE, &store);
+    if (ret == -1) {
+      store.fst_flags = F_ALLOCATEALL;
+      ret = ::fcntl(fd, F_PREALLOCATE, &store);
+      if (ret == -1) {
+        int err = errno;
+        derr << "FileJournal::_open_file : unable to preallocation journal to "
+          << newsize << " bytes: " << cpp_strerror(err) << dendl;
+        return -err;
+      }
+    }
+    ret = ::ftruncate(fd, newsize);
+    if (ret) {
+      int err = errno;
+      derr << "FileJournal::_open_file : unable to preallocation journal to "
+        << newsize << " bytes: " << cpp_strerror(err) << dendl;
+      return -err;
+    }
+#else
     ret = ::posix_fallocate(fd, 0, newsize);
     if (ret < 0) {
       int err = errno;
@@ -299,6 +320,7 @@ int FileJournal::_open_file(int64_t oldsize, blksize_t blksize,
 	   << newsize << " bytes: " << cpp_strerror(err) << dendl;
       return -err;
     }
+#endif
     max_size = newsize;
   }
   else {
