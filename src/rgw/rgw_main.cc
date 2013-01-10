@@ -353,12 +353,12 @@ done:
 
   if (handler)
     handler->put_op(op);
-  rest->put_handler(handler);
   store->destroy_context(s->obj_ctx);
   FCGX_Finish_r(fcgx);
 
   dout(1) << "====== req done req=" << hex << req << dec << " http_status=" << http_ret << " ======" << dendl;
   delete req;
+  delete handler;
 }
 
 class C_InitTimeout : public Context {
