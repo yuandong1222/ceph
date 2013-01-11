@@ -20,7 +20,7 @@
 
 int pipe_cloexec(int pipefd[2])
 {
-#if defined(O_CLOEXEC) && !defined(__FreeBSD__)
+#if defined(HAVE_PIPE2) && defined(O_CLOEXEC) && !defined(__FreeBSD__)
 	int ret;
 	ret = pipe2(pipefd, O_CLOEXEC);
 	if (ret) {
