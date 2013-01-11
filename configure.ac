@@ -94,7 +94,7 @@ if test x"$linux" = x"yes"; then
 	AC_CHECK_LIB([keyutils], [add_key], [true], AC_MSG_FAILURE([libkeyutils not found]))
 fi
 
-AC_CHECK_FUNCS([syncfs pipe2])
+AC_CHECK_FUNCS([syncfs pipe2 lseek64])
 
 # Find some crypto library for us to use, while letting user to decide which one to use.
 AC_ARG_WITH([cryptopp],

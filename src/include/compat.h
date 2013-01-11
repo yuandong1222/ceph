@@ -12,8 +12,11 @@
 #ifndef CEPH_COMPAT_H
 #define CEPH_COMPAT_H
 
+#ifndef HAVE_LSEEK64
+#define lseek64(fd, offset, whence) lseek(fd, offset, whence)
+#endif
+
 #if defined(__FreeBSD__)
-#define	lseek64(fd, offset, whence)	lseek(fd, offset, whence)
 #define	ENODATA	61
 #define	TEMP_FAILURE_RETRY
 #define	MSG_MORE 0
