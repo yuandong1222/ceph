@@ -93,7 +93,8 @@ AC_CHECK_LIB([resolv], [__res_nquery], [true], AC_MSG_FAILURE([libresolv not fou
 if test x"$linux" = x"yes"; then
 	AC_CHECK_LIB([keyutils], [add_key], [true], AC_MSG_FAILURE([libkeyutils not found]))
 fi
-AC_CHECK_FUNCS([syncfs], AC_DEFINE([HAVE_SYS_SYNCFS], [1], [we have syncfs]), [])
+
+AC_CHECK_FUNCS([syncfs])
 
 # Find some crypto library for us to use, while letting user to decide which one to use.
 AC_ARG_WITH([cryptopp],

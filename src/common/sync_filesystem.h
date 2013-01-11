@@ -31,7 +31,7 @@ inline int sync_filesystem(int fd)
    * performs a sync on only one filesystem. If we don't have this call, we
    * have to fall back on sync(), which synchronizes every filesystem on the
    * computer. */
-#ifdef HAVE_SYS_SYNCFS
+#ifdef HAVE_SYNCFS
   if (syncfs(fd) == 0)
     return 0;
 #elif defined(SYS_syncfs)

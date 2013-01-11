@@ -77,7 +77,7 @@ void DumbBackend::sync_loop()
       }
     }
     tp.pause();
-#ifdef HAVE_SYS_SYNCFS
+#ifdef HAVE_SYNCFS
     ::syncfs(sync_fd);
 #else
     ::sync();

@@ -1220,7 +1220,7 @@ int FileStore::_detect_fs()
   }
 
   bool have_syncfs = false;
-#ifdef HAVE_SYS_SYNCFS
+#ifdef HAVE_SYNCFS
   if (syncfs(fd) == 0) {
     dout(0) << "mount syncfs(2) syscall fully supported (by glibc and kernel)" << dendl;
     have_syncfs = true;
