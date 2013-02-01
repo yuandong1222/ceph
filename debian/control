@@ -334,11 +334,11 @@ Description: Python libraries for the Ceph distributed filesystem
 Package: libcephfs-java
 Section: java
 Architecture: all
-Depends: libcephfs-jni, ${java:Depends}, ${misc:Depends}
+Depends: libcephfs-jni, ${misc:Depends}
 Description: Java libraries for the Ceph File System.
 
 Package: libcephfs-jni
 Architecture: linux-any
 Section: libs
-Depends: libcephfs1, ${shlibs:Depends}, ${java:Depends}, ${misc:Depends}
+Depends: libcephfs1, ${shlibs:Depends}, ${misc:Depends}
 Description: Java Native Interface library for CephFS Java bindings.
