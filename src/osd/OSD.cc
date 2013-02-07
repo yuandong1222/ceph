@@ -1476,6 +1476,7 @@ void OSD::load_pgs()
     derr << "failed to list pgs: " << cpp_strerror(-r) << dendl;
   }
 
+  map<pg_t, interval_set<snapid_t> > pgs;
   for (vector<coll_t>::iterator it = ls.begin();
        it != ls.end();
        it++) {
@@ -1509,8 +1510,15 @@ void OSD::load_pgs()
     if (snap != CEPH_NOSNAP) {
       dout(10) << "load_pgs skipping snapped dir " << *it
 	       << " (pg " << pgid << " snap " << snap << ")" << dendl;
-      continue;
+      pgs[pgid].insert(snap);
     }
+    pgs[pgid];
+  }
+
+  for (map<pg_t, interval_set<snapid_t> >::iterator i = pgs.begin();
+       i != pgs.end();
+       ++i) {
+    pg_t pgid(i->first);
 
     if (!osdmap->have_pg_pool(pgid.pool())) {
       dout(10) << __func__ << ": skipping PG " << pgid << " because we don't have pool "
@@ -1525,7 +1533,7 @@ void OSD::load_pgs()
     }
 
     bufferlist bl;
-    epoch_t map_epoch = PG::peek_map_epoch(store, *it, &bl);
+    epoch_t map_epoch = PG::peek_map_epoch(store, coll_t(pgid), &bl);
 
     PG *pg = _open_lock_pg(map_epoch == 0 ? osdmap : service.get_map(map_epoch), pgid);
 
