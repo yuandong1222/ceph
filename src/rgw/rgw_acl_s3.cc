@@ -264,7 +264,89 @@ bool RGWAccessControlList_S3::xml_end(const char *el) {
   return true;
 }
 
-bool RGWAccessControlList_S3::create_canned(string id, string name, string canned_acl)
+struct s3_acl_header {
+  int rgw_perm;
+  const char *http_header;
+
+  s3_acl_header(int perm, const char *head) {
+    rgw_perm = perm;
+    http_header = head;
+  }
+};
+
+static const char *get_acl_header(struct req_state *s, 
+        const struct s3_acl_header *perm)
+{
+  const char *header = perm->http_header;
+
+  return s->env->get(header, NULL);
+}
+
+static int parse_grantee_str(RGWRados *store, string& grantee_str,
+        const struct s3_acl_header *perm, ACLGrant& grant)
+{
+  string id_type, id_val;
+  int rgw_perm = perm->rgw_perm;
+  int ret;
+
+  RGWUserInfo info;
+
+  ret = parse_key_value(grantee_str, id_type, id_val);
+  if (ret < 0)
+    return ret;
+
+  if (strcasecmp(id_type.c_str(), "emailAddress") == 0) {
+    ret = rgw_get_user_info_by_email(store, id_val, info);
+    if (ret < 0)
+      return ret;
+
+    grant.set_canon(info.user_id, info.display_name, rgw_perm);
+  } else if (strcasecmp(id_type.c_str(), "id") == 0) {
+    ret = rgw_get_user_info_by_uid(store, id_val, info);
+    if (ret < 0)
+      return ret;
+
+    grant.set_canon(info.user_id, info.display_name, rgw_perm);
+  } else if (strcasecmp(id_type.c_str(), "uri") == 0) {
+    ACLGroupTypeEnum gid = grant.uri_to_group(id_val);
+    if (gid == ACL_GROUP_NONE)
+      return -EINVAL;
+
+    grant.set_group(gid, rgw_perm);
+  } else {
+    return -EINVAL;
+  }
+
+  return 0;
+}
+
+static int parse_acl_header(RGWRados *store, struct req_state *s,
+         const struct s3_acl_header *perm, std::list<ACLGrant>& _grants)
+{
+  std::list<string> grantees;
+  std::string hacl_str;
+
+  const char *hacl = get_acl_header(s, perm);
+  if (hacl == NULL)
+    return 0;
+
+  hacl_str = hacl;
+  get_str_list(hacl_str, ",", grantees);
+
+  list<string>::iterator it = grantees.begin();
+  for (; it != grantees.end(); it++) {
+    ACLGrant grant;
+    int ret = parse_grantee_str(store, *it, perm, grant);
+    if (ret < 0)
+      return ret;
+
+    _grants.push_back(grant);
+  }
+
+  return 0;
+}
+
+int RGWAccessControlList_S3::create_canned(string id, string name, string canned_acl)
 {
   acl_user_map.clear();
   grant_map.clear();
@@ -275,7 +357,7 @@ bool RGWAccessControlList_S3::create_canned(string id, string name, string canne
   add_grant(&grant);
 
   if (canned_acl.size() == 0 || canned_acl.compare("private") == 0) {
-    return true;
+    return 0;
   }
 
   ACLGrant group_grant;
@@ -291,10 +373,27 @@ bool RGWAccessControlList_S3::create_canned(string id, string name, string canne
     group_grant.set_group(ACL_GROUP_AUTHENTICATED_USERS, RGW_PERM_READ);
     add_grant(&group_grant);
   } else {
-    return false;
+    return -EINVAL;
   }
 
-  return true;
+  return 0;
+}
+
+int RGWAccessControlList_S3::create_from_grants(struct req_state *s, std::list<ACLGrant>& grants)
+{
+  if (grants.empty())
+    return -EINVAL;
+
+  acl_user_map.clear();
+  grant_map.clear();
+
+  std::list<ACLGrant>::iterator it = grants.begin();
+  for (; it != grants.end(); it++) {
+    ACLGrant g = *it;
+    add_grant(&g);
+  }
+
+  return 0;
 }
 
 bool RGWAccessControlPolicy_S3::xml_end(const char *el) {
@@ -310,6 +409,53 @@ bool RGWAccessControlPolicy_S3::xml_end(const char *el) {
     return false;
   owner = *owner_p;
   return true;
+}
+
+int RGWAccessControlPolicy_S3::create_from_headers(RGWRados *store, struct req_state *s)
+{
+  std::list<ACLGrant> grants;
+  int ret;
+
+  const s3_acl_header grant_read(RGW_PERM_READ,"HTTP_X_AMZ_GRANT_READ");
+  const s3_acl_header grant_write(RGW_PERM_WRITE, "HTTP_X_AMZ_GRANT_WRITE");
+  const s3_acl_header grant_read_acp(RGW_PERM_READ_ACP,"HTTP_X_AMZ_GRANT_READ_ACP");
+  const s3_acl_header grant_write_acp(RGW_PERM_WRITE_ACP, "HTTP_X_AMZ_GRANT_WRITE_ACP");
+  const s3_acl_header grant_full_control(RGW_PERM_FULL_CONTROL, "HTTP_X_AMZ_GRANT_FULL_CONTROL");
+
+  const s3_acl_header *perms[] = {
+                                   &grant_read,
+                                   &grant_write,
+                                   &grant_read_acp,
+                                   &grant_write_acp,
+                                   &grant_full_control,
+                                   NULL
+                                 };
+
+  for (const struct s3_acl_header **p = perms; *p; p++) {
+    ret = parse_acl_header(store, s, *p, grants);
+    if (ret < 0)
+      return false;
+  }
+
+  RGWAccessControlList_S3& _acl = static_cast<RGWAccessControlList_S3 &>(acl);
+  int r = _acl.create_from_grants(s, grants);
+
+  owner.set_id(s->user.user_id);
+  owner.set_name(s->user.display_name);
+
+  return r;
+}
+
+int RGWAccessControlPolicy_S3::create_policy(RGWRados *store, struct req_state *s)
+{
+  if (s->has_acl_header) {
+    if (!s->canned_acl.empty())
+      return -ERR_INVALID_REQUEST;
+
+    return create_from_headers(store, s);
+  }
+
+  return create_canned(s->user.user_id, s->user.display_name, s->canned_acl);
 }
 
 /*
