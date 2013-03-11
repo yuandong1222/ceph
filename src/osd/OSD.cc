@@ -459,6 +459,8 @@ int OSD::mkfs(const std::string &dev, const std::string &jdev, uuid_d fsid, int 
     bufferlist sbbl;
     ret = store->read(coll_t::META_COLL, OSD_SUPERBLOCK_POBJECT, 0, 0, sbbl);
     if (ret >= 0) {
+      bufferlist::iterator sbbliter = sbbl.begin();
+      ::decode(sb, sbbliter);
       dout(0) << " have superblock" << dendl;
       if (whoami != sb.whoami) {
 	derr << "provided osd id " << whoami << " != superblock's " << sb.whoami << dendl;
