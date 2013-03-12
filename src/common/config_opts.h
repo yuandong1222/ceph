@@ -470,8 +470,8 @@ OPTION(filestore_replica_fadvise, OPT_BOOL, true)
 OPTION(journal_dio, OPT_BOOL, true)
 OPTION(journal_aio, OPT_BOOL, false)
 
-// Number of entries to scan in journal to look for evidence of corruption
-OPTION(journal_max_read_attempts, OPT_U64, 20)
+// max bytes to search ahead in journal searching for corruption
+OPTION(journal_max_corrupt_search, OPT_U64, 10<<20)
 OPTION(journal_block_align, OPT_BOOL, true)
 OPTION(journal_write_header_frequency, OPT_U64, 0)
 OPTION(journal_max_write_bytes, OPT_INT, 10 << 20)

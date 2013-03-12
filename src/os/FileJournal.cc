@@ -1648,10 +1648,9 @@ bool FileJournal::read_entry(
     return true;
   }
 
-  uint64_t tries = 0;
   stringstream errss;
   while (result == MAYBE_CORRUPT &&
-	 tries < g_conf->journal_max_read_attempts) {
+	 (pos - read_pos) < g_conf->journal_max_corrupt_search) {
     errss << "Entry at pos " << pos << " possibly corrupt due to: ("
 	  << ss.str() << ")" << std::endl;
     ss.clear();
@@ -1662,7 +1661,6 @@ bool FileJournal::read_entry(
       &bl,
       &seq,
       &ss);
-    ++tries;
   }
 
   if (result == SUCCESS) {
@@ -1719,9 +1717,11 @@ FileJournal::read_entry_result FileJournal::do_read_entry(
   if (!h->check_magic(pos, header.get_fsid64())) {
     dout(2) << "read_entry " << pos
 	    << " : bad header magic, end of journal" << dendl;
-    /* TODO: if the length looks ok, we might try returning MAYBE_CORRUPT
-     * with next_pos at the next candidate instead */
-    return FAILURE;
+    if (ss)
+      *ss << "bad header magic";
+    if (next_pos)
+      *next_pos = pos + (4<<10); // check 4k ahead
+    return MAYBE_CORRUPT;
   }
   pos = _next_pos;
 

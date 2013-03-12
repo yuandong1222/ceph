@@ -529,7 +529,7 @@ TEST(TestFileJournal, ReplayDetectCorruptHeader) {
 
   result = j.read_entry(bl, seq, &corrupt);
   ASSERT_FALSE(result);
-  ASSERT_FALSE(corrupt);
+  ASSERT_TRUE(corrupt);
   
   j.make_writeable();
   j.close();
