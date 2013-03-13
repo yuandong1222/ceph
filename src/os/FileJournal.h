@@ -110,7 +110,9 @@ public:
     int64_t start;      // offset of first entry
     uint64_t committed_up_to; // committed up to
 
-    header_t() : flags(0), block_size(0), alignment(0), max_size(0), start(0) {}
+    header_t() :
+      flags(0), block_size(0), alignment(0), max_size(0), start(0),
+      committed_up_to(0) {}
 
     void clear() {
       start = block_size;

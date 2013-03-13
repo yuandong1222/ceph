@@ -1621,12 +1621,12 @@ void FileJournal::wrap_read_bl(
 
 bool FileJournal::read_entry(
   bufferlist &bl,
-  uint64_t &last_seq,
+  uint64_t &next_seq,
   bool *corrupt)
 {
   if (corrupt)
     *corrupt = false;
-  uint64_t seq = last_seq;
+  uint64_t seq = next_seq;
 
   if (!read_pos) {
     dout(2) << "read_next_entry -- not readable" << dendl;
@@ -1642,9 +1642,9 @@ bool FileJournal::read_entry(
     &bl,
     &seq,
     &ss);
-  if (result == SUCCESS && last_seq < seq) {
+  if (result == SUCCESS) {
     read_pos = next_pos;
-    last_seq = seq;
+    next_seq = seq;
     return true;
   }
 
@@ -1664,7 +1664,7 @@ bool FileJournal::read_entry(
   }
 
   if (result == SUCCESS) {
-    if (seq > last_seq) {
+    if (seq >= next_seq) {
       derr << errss.str() << dendl;
       derr << "Entry at pos " << pos << " valid, there are missing sequence "
 	   << "numbers prior to seq " << seq << dendl;
@@ -1676,7 +1676,9 @@ bool FileJournal::read_entry(
 	assert(0);
       }
     } // else: we read a valid, but old entry, no problem
-  } else if (seq < header.committed_up_to) {
+  }
+
+  if (seq < header.committed_up_to) {
     derr << "Unable to read past sequence " << seq
 	 << " but header indicates the journal has committed up through "
 	 << header.committed_up_to << ", journal is corrupt" << dendl;
