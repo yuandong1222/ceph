@@ -671,7 +671,7 @@ public:
       ENCODE_FINISH(bl);
     }
     void decode(bufferlist::iterator &bl) {
-      DECODE_START_LEGACY_COMPAT_LEN(6, 5, 5, bl);
+      DECODE_START_LEGACY_COMPAT_LEN(7, 5, 5, bl);
       DECODE_OLDEST(2);
       if (struct_v < 4)
 	sobject_encoding = true;
