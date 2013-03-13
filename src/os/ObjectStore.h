@@ -641,11 +641,14 @@ public:
       sobject_encoding(false), pool_override(-1), use_pool_override(false),
       replica(false),
       tolerate_collection_add_enoent(false) {}
+
     Transaction(bufferlist::iterator &dp) :
       ops(0), pad_unused_bytes(0), largest_data_len(0), largest_data_off(0), largest_data_off_in_tbl(0),
       sobject_encoding(false), pool_override(-1), use_pool_override(false),
       replica(false),
-      tolerate_collection_add_enoent(false) {}
+      tolerate_collection_add_enoent(false) {
+      decode(dp);
+    }
     
     Transaction(bufferlist &nbl) :
       ops(0), pad_unused_bytes(0), largest_data_len(0), largest_data_off(0), largest_data_off_in_tbl(0),
