@@ -1825,7 +1825,7 @@ void FileJournal::corrupt(
   int wfd,
   off64_t corrupt_at)
 {
-  if (corrupt_at > header.max_size)
+  if (corrupt_at >= header.max_size)
     corrupt_at = corrupt_at + get_top() - header.max_size;
 
 #ifdef DARWIN
