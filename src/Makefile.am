@@ -357,7 +357,8 @@ librgw_a_SOURCES =  \
 	rgw/rgw_usage.cc \
 	rgw/rgw_json.cc \
 	rgw/rgw_user.cc \
-	rgw/rgw_tools.cc \
+	rgw/rgw_bucket.cc\
+        rgw/rgw_tools.cc \
 	rgw/rgw_rados.cc \
 	rgw/rgw_op.cc \
 	rgw/rgw_common.cc \
@@ -1930,7 +1931,8 @@ noinst_HEADERS = \
 	rgw/rgw_tools.h\
 	rgw/rgw_usage.h\
 	rgw/rgw_user.h\
-	sample.ceph.conf\
+	rgw/rgw_bucket.h\
+        sample.ceph.conf\
 	tools/common.h\
 	test/osd/RadosModel.h\
 	test/osd/Object.h\

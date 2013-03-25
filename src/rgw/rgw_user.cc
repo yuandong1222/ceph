@@ -14,6 +14,8 @@
 // until everything is moved from rgw_common
 #include "rgw_common.h"
 
+#include "rgw_bucket.h"
+
 #define dout_subsys ceph_subsys_rgw
 
 using namespace std;
@@ -205,180 +207,6 @@ extern int rgw_get_user_info_by_access_key(RGWRados *store, string& access_key, 
   return rgw_get_user_info_from_index(store, access_key, store->params.user_keys_pool, info);
 }
 
-static void get_buckets_obj(string& user_id, string& buckets_obj_id)
-{
-  buckets_obj_id = user_id;
-  buckets_obj_id += RGW_BUCKETS_OBJ_PREFIX;
-}
-
-static int rgw_read_buckets_from_attr(RGWRados *store, string& user_id, RGWUserBuckets& buckets)
-{
-  bufferlist bl;
-  rgw_obj obj(store->params.user_uid_pool, user_id);
-  int ret = store->get_attr(NULL, obj, RGW_ATTR_BUCKETS, bl);
-  if (ret)
-    return ret;
-
-  bufferlist::iterator iter = bl.begin();
-  try {
-    buckets.decode(iter);
-  } catch (buffer::error& err) {
-    ldout(store->ctx(), 0) << "ERROR: failed to decode buckets info, caught buffer::error" << dendl;
-    return -EIO;
-  }
-  return 0;
-}
-
-/**
- * Get all the buckets owned by a user and fill up an RGWUserBuckets with them.
- * Returns: 0 on success, -ERR# on failure.
- */
-int rgw_read_user_buckets(RGWRados *store, string user_id, RGWUserBuckets& buckets, bool need_stats)
-{
-  int ret;
-  buckets.clear();
-  if (store->supports_omap()) {
-    string buckets_obj_id;
-    get_buckets_obj(user_id, buckets_obj_id);
-    bufferlist bl;
-    rgw_obj obj(store->params.user_uid_pool, buckets_obj_id);
-    bufferlist header;
-    map<string,bufferlist> m;
-
-    ret = store->omap_get_all(obj, header, m);
-    if (ret == -ENOENT)
-      ret = 0;
-
-    if (ret < 0)
-      return ret;
-
-    for (map<string,bufferlist>::iterator q = m.begin(); q != m.end(); q++) {
-      bufferlist::iterator iter = q->second.begin();
-      RGWBucketEnt bucket;
-      ::decode(bucket, iter);
-      buckets.add(bucket);
-    }
-  } else {
-    ret = rgw_read_buckets_from_attr(store, user_id, buckets);
-    switch (ret) {
-    case 0:
-      break;
-    case -ENODATA:
-      ret = 0;
-      return 0;
-    default:
-      return ret;
-    }
-  }
-
-  list<string> buckets_list;
-
-  if (need_stats) {
-    map<string, RGWBucketEnt>& m = buckets.get_buckets();
-    int r = store->update_containers_stats(m);
-    if (r < 0)
-      ldout(store->ctx(), 0) << "ERROR: could not get stats for buckets" << dendl;
-
-  }
-  return 0;
-}
-
-/**
- * Store the set of buckets associated with a user on a n xattr
- * not used with all backends
- * This completely overwrites any previously-stored list, so be careful!
- * Returns 0 on success, -ERR# otherwise.
- */
-int rgw_write_buckets_attr(RGWRados *store, string user_id, RGWUserBuckets& buckets)
-{
-  bufferlist bl;
-  buckets.encode(bl);
-
-  rgw_obj obj(store->params.user_uid_pool, user_id);
-
-  int ret = store->set_attr(NULL, obj, RGW_ATTR_BUCKETS, bl);
-
-  return ret;
-}
-
-int rgw_add_bucket(RGWRados *store, string user_id, rgw_bucket& bucket)
-{
-  int ret;
-  string& bucket_name = bucket.name;
-
-  if (store->supports_omap()) {
-    bufferlist bl;
-
-    RGWBucketEnt new_bucket;
-    new_bucket.bucket = bucket;
-    new_bucket.size = 0;
-    time(&new_bucket.mtime);
-    ::encode(new_bucket, bl);
-
-    string buckets_obj_id;
-    get_buckets_obj(user_id, buckets_obj_id);
-
-    rgw_obj obj(store->params.user_uid_pool, buckets_obj_id);
-    ret = store->omap_set(obj, bucket_name, bl);
-    if (ret < 0) {
-      ldout(store->ctx(), 0) << "ERROR: error adding bucket to directory: "
-          << cpp_strerror(-ret)<< dendl;
-    }
-  } else {
-    RGWUserBuckets buckets;
-
-    ret = rgw_read_user_buckets(store, user_id, buckets, false);
-    RGWBucketEnt new_bucket;
-
-    switch (ret) {
-    case 0:
-    case -ENOENT:
-    case -ENODATA:
-      new_bucket.bucket = bucket;
-      new_bucket.size = 0;
-      time(&new_bucket.mtime);
-      buckets.add(new_bucket);
-      ret = rgw_write_buckets_attr(store, user_id, buckets);
-      break;
-    default:
-      ldout(store->ctx(), 10) << "rgw_write_buckets_attr returned " << ret << dendl;
-      break;
-    }
-  }
-
-  return ret;
-}
-
-int rgw_remove_user_bucket_info(RGWRados *store, string user_id, rgw_bucket& bucket)
-{
-  int ret;
-
-  if (store->supports_omap()) {
-    bufferlist bl;
-
-    string buckets_obj_id;
-    get_buckets_obj(user_id, buckets_obj_id);
-
-    rgw_obj obj(store->params.user_uid_pool, buckets_obj_id);
-    ret = store->omap_del(obj, bucket.name);
-    if (ret < 0) {
-      ldout(store->ctx(), 0) << "ERROR: error removing bucket from directory: "
-          << cpp_strerror(-ret)<< dendl;
-    }
-  } else {
-    RGWUserBuckets buckets;
-
-    ret = rgw_read_user_buckets(store, user_id, buckets, false);
-
-    if (ret == 0 || ret == -ENOENT) {
-      buckets.remove(bucket.name);
-      ret = rgw_write_buckets_attr(store, user_id, buckets);
-    }
-  }
-
-  return ret;
-}
-
 int rgw_remove_key_index(RGWRados *store, RGWAccessKey& access_key)
 {
   rgw_obj obj(store->params.user_keys_pool, access_key.id);
@@ -458,7 +286,7 @@ int rgw_delete_user(RGWRados *store, RGWUserInfo& info) {
   }
 
   string buckets_obj_id;
-  get_buckets_obj(info.user_id, buckets_obj_id);
+  rgw_get_buckets_obj(info.user_id, buckets_obj_id);
   rgw_obj uid_bucks(store->params.user_uid_pool, buckets_obj_id);
   ldout(store->ctx(), 10) << "removing user buckets index" << dendl;
   ret = store->delete_obj(NULL, uid_bucks);
@@ -559,87 +387,6 @@ static bool validate_access_key(string& key)
     p++;
   }
   return true;
-}
-
-// move to bucket operation class
-int rgw_remove_object(RGWRados *store, rgw_bucket& bucket, std::string& object)
-{
-  RGWRadosCtx rctx(store);
-
-  rgw_obj obj(bucket,object);
-
-  int ret = store->delete_obj((void *)&rctx, obj);
-
-  return ret;
-}
-
-// move to bucket operation class
-int rgw_remove_bucket(RGWRados *store, rgw_bucket& bucket, bool delete_children)
-{
-  int ret;
-  map<RGWObjCategory, RGWBucketStats> stats;
-  std::vector<RGWObjEnt> objs;
-  std::string prefix, delim, marker, ns;
-  map<string, bool> common_prefixes;
-  rgw_obj obj;
-  RGWBucketInfo info;
-  bufferlist bl;
-
-  ret = store->get_bucket_stats(bucket, stats);
-  if (ret < 0)
-    return ret;
-
-  obj.bucket = bucket;
-  int max = 1000;
-
-  ret = rgw_get_obj(store, NULL, store->params.domain_root,\
-           bucket.name, bl, NULL);
-
-  bufferlist::iterator iter = bl.begin();
-  try {
-    ::decode(info, iter);
-  } catch (buffer::error& err) {
-    //cerr << "ERROR: could not decode buffer info, caught buffer::error" << std::endl;
-    return -EIO;
-  }
-
-  if (delete_children) {
-    ret = store->list_objects(bucket, max, prefix, delim, marker,\
-            objs, common_prefixes,\
-            false, ns, (bool *)false, NULL);
-
-    if (ret < 0)
-      return ret;
-
-    while (objs.size() > 0) {
-      std::vector<RGWObjEnt>::iterator it = objs.begin();
-      for (it = objs.begin(); it != objs.end(); it++) {
-        ret = rgw_remove_object(store, bucket, (*it).name);
-        if (ret < 0)
-          return ret;
-      }
-      objs.clear();
-
-      ret = store->list_objects(bucket, max, prefix, delim, marker, objs, common_prefixes,
-                                false, ns, (bool *)false, NULL);
-      if (ret < 0)
-        return ret;
-    }
-  }
-
-  ret = store->delete_bucket(bucket);
-  if (ret < 0) {
-    //cerr << "ERROR: could not remove bucket " << bucket.name << std::endl;
-
-    return ret;
-  }
-
-  ret = rgw_remove_user_bucket_info(store, info.owner, bucket);
-  if (ret < 0) {
-    //cerr << "ERROR: unable to remove user bucket information" << std::endl;
-  }
-
-  return ret;
 }
 
 static void set_err_msg(std::string *sink, std::string msg)
