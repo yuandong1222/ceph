@@ -99,14 +99,13 @@ public:
 };
 
 class TrackedOp {
-public:
-  Message *request; /// the logical request we are tracking
 private:
   friend class OpHistory;
   friend class OpTracker;
   xlist<TrackedOp*>::item xitem;
 
 protected:
+  Message *request; /// the logical request we are tracking
   OpTracker *tracker; /// the tracker we are associated with
 
   list<pair<utime_t, string> > events; /// list of events and their times
@@ -119,8 +118,8 @@ protected:
   uint8_t warn_interval_multiplier;
 
   TrackedOp(Message *req, OpTracker *_tracker) :
-    request(req),
     xitem(this),
+    request(req),
     tracker(_tracker),
     lock("TrackedOp::lock"),
     seq(0),
