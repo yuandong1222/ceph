@@ -18,86 +18,11 @@
 #include <vector>
 
 #include <include/utime.h>
-#include "common/Mutex.h"
-#include "include/xlist.h"
 #include "msg/Message.h"
 #include <tr1/memory>
 #include "common/TrackedOp.h"
 #include "osd/osd_types.h"
 
-class OpHistory {
-  set<pair<utime_t, TrackedOpRef> > arrived;
-  set<pair<double, TrackedOpRef> > duration;
-  void cleanup(utime_t now);
-  bool shutdown;
-
-public:
-  OpHistory() : shutdown(false) {}
-  ~OpHistory() {
-    assert(arrived.empty());
-    assert(duration.empty());
-  }
-  void insert(utime_t now, TrackedOpRef op);
-  void dump_ops(utime_t now, Formatter *f);
-  void on_shutdown();
-};
-
-class OpTracker {
-  class RemoveOnDelete {
-    OpTracker *tracker;
-  public:
-    RemoveOnDelete(OpTracker *tracker) : tracker(tracker) {}
-    void operator()(TrackedOp *op);
-  };
-  friend class RemoveOnDelete;
-  uint64_t seq;
-  Mutex ops_in_flight_lock;
-  xlist<TrackedOp *> ops_in_flight;
-  OpHistory history;
-
-public:
-  OpTracker() : seq(0), ops_in_flight_lock("OpTracker mutex") {}
-  void dump_ops_in_flight(std::ostream& ss);
-  void dump_historic_ops(std::ostream& ss);
-  void register_inflight_op(xlist<TrackedOp*>::item *i);
-  void unregister_inflight_op(TrackedOp *i);
-
-  /**
-   * Look for Ops which are too old, and insert warning
-   * strings for each Op that is too old.
-   *
-   * @param warning_strings A vector<string> reference which is filled
-   * with a warning string for each old Op.
-   * @return True if there are any Ops to warn on, false otherwise.
-   */
-  bool check_ops_in_flight(std::vector<string> &warning_strings);
-  void mark_event(TrackedOp *op, const string &evt);
-  void _mark_event(TrackedOp *op, const string &evt, utime_t now);
-
-  void on_shutdown() {
-    Mutex::Locker l(ops_in_flight_lock);
-    history.on_shutdown();
-  }
-  ~OpTracker() {
-    assert(ops_in_flight.empty());
-  }
-
-  template <typename T, typename TRef>
-  TRef create_request(Message *ref)
-  {
-    TRef retval(new T(ref, this),
-                RemoveOnDelete(this));
-
-    _mark_event(retval.get(), "header_read", ref->get_recv_stamp());
-    _mark_event(retval.get(), "throttled", ref->get_throttle_stamp());
-    _mark_event(retval.get(), "all_read", ref->get_recv_complete_stamp());
-    _mark_event(retval.get(), "dispatched", ref->get_dispatch_stamp());
-
-    retval->init_from_message();
-
-    return retval;
-  }
-};
 
 /**
  * The OpRequest takes in a Message* and takes over a single reference
@@ -108,8 +33,6 @@ public:
  */
 struct OpRequest : public TrackedOp {
   friend class OpTracker;
-  friend class OpHistory;
-
   // rmw flags
   int rmw_flags;
 
