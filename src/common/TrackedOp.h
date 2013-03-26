@@ -23,7 +23,8 @@
 
 class TrackedOp {
 protected:
-  list<pair<utime_t, string> > events;
+  list<pair<utime_t, string> > events; /// list of events and their times
+  Mutex lock; /// to protect the events list
 public:
   // move these to private once friended OpTracker
   Message *request;
@@ -35,6 +36,7 @@ public:
   uint64_t seq;
 
   TrackedOp(Message *req) :
+    lock("TrackedOp::lock"),
     request(req),
     xitem(this),
     warn_interval_multiplier(1),
@@ -47,6 +49,7 @@ public:
   utime_t get_arrived() const {
     return received_time;
   }
+  // This function maybe needs some work; assumes last event is completion time
   double get_duration() const {
     return events.size() ?
       (events.rbegin()->first - received_time) :

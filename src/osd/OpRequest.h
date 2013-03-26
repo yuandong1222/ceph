@@ -140,7 +140,6 @@ struct OpRequest : public TrackedOp {
   void dump(utime_t now, Formatter *f) const;
 
 private:
-  Mutex lock;
   OpTracker *tracker;
   osd_reqid_t reqid;
   uint8_t hit_flag_points;
@@ -155,7 +154,6 @@ private:
   OpRequest(Message *req, OpTracker *tracker) :
     TrackedOp(req),
     rmw_flags(0),
-    lock("OpRequest::lock"),
     tracker(tracker),
     hit_flag_points(0), latest_flag_point(0) {
     received_time = request->get_recv_stamp();
