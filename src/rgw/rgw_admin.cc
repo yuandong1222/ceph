@@ -875,17 +875,10 @@ int main(int argc, char **argv)
 
     break;
   case OPT_SUBUSER_CREATE:
-    ret = user.subusers->add(op_state, &err_msg);
-    if (ret < 0) {
-      cerr << "could not create subuser: " << err_msg << std::endl;
-      return -ret;
-    }
-
-    break;
   case OPT_SUBUSER_MODIFY:
-    ret = user.subusers->modify(op_state, &err_msg);
+    ret = user.subusers.add(op_state, &err_msg);
     if (ret < 0) {
-      cerr << "could not modify subuser: " << err_msg << std::endl;
+      cerr << "could not add or modify subuser: " << err_msg << std::endl;
       return -ret;
     }
 
@@ -899,7 +892,7 @@ int main(int argc, char **argv)
 
     break;
   case OPT_SUBUSER_RM:
-    ret = user.subusers->remove(op_state, &err_msg);
+    ret = user.subusers.remove(op_state, &err_msg);
     if (ret < 0) {
       cerr << "could not remove subuser: " << err_msg << std::endl;
       return -ret;
@@ -907,7 +900,7 @@ int main(int argc, char **argv)
 
     break;
   case OPT_CAPS_ADD:
-    ret = user.caps->add(op_state, &err_msg);
+    ret = user.caps.add(op_state, &err_msg);
     if (ret < 0) {
       cerr << "could not add caps: " << err_msg << std::endl;
       return -ret;
@@ -915,7 +908,7 @@ int main(int argc, char **argv)
 
     break;
   case OPT_CAPS_RM:
-    ret = user.caps->remove(op_state, &err_msg);
+    ret = user.caps.remove(op_state, &err_msg);
     if (ret < 0) {
       cerr << "could not add remove caps: " << err_msg << std::endl;
       return -ret;
@@ -923,7 +916,7 @@ int main(int argc, char **argv)
 
     break;
   case OPT_KEY_CREATE:
-    ret = user.keys->add(op_state, &err_msg);
+    ret = user.keys.add(op_state, &err_msg);
     if (ret < 0) {
       cerr << "could not create key: " << err_msg << std::endl;
       return -ret;
@@ -931,7 +924,7 @@ int main(int argc, char **argv)
 
     break;
   case OPT_KEY_RM:
-    ret = user.keys->remove(op_state, &err_msg);
+    ret = user.keys.remove(op_state, &err_msg);
     if (ret < 0) {
       cerr << "could not remove key: " << err_msg << std::endl;
       return -ret;

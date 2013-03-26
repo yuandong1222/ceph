@@ -749,6 +749,12 @@ static void dump_user_info(Formatter *f, RGWUserInfo &info)
 {
   f->open_object_section("user_info");
 
+  f->dump_string("user_id", info.user_id);
+  f->dump_string("display_name", info.display_name);
+  f->dump_string("email", info.user_email);
+  f->dump_int("suspended", (int)info.suspended);
+  f->dump_int("max_buckets", (int)info.max_buckets);
+
   dump_subusers_info(f, info);
   dump_access_keys_info(f, info);
   dump_swift_keys_info(f, info);
@@ -757,6 +763,10 @@ static void dump_user_info(Formatter *f, RGWUserInfo &info)
   f->close_section();
 }
 
+RGWAccessKeyPool::RGWAccessKeyPool()
+{
+
+}
 
 RGWAccessKeyPool::RGWAccessKeyPool(RGWUser* usr)
 {
@@ -797,6 +807,12 @@ int RGWAccessKeyPool::init(RGWUserAdminOpState& op_state)
 
   return 0;
 }
+
+/*
+ * Do a fairly exhaustive search for an existing key matching the parameters
+ * given. Also handles the case where no key type was specified and updates
+ * the operation state if needed.
+ */
 
 bool RGWAccessKeyPool::check_existing_key(RGWUserAdminOpState& op_state)
 {
@@ -852,6 +868,7 @@ bool RGWAccessKeyPool::check_existing_key(RGWUserAdminOpState& op_state)
       break;
     }
 
+    // handle the case where the access key was not provided in user:key format
     if (swift_kid.empty())
       return false;
 
@@ -895,10 +912,7 @@ int RGWAccessKeyPool::check_op(RGWUserAdminOpState& op_state,
     return -EINVAL;
   }
 
-  if (!op_state.will_gen_secret() && secret_key.empty()) {
-    set_err_msg(err_msg, "empty secret key");
-    return -EINVAL;
-  }
+  // don't check for secret key because we may be doing a removal
 
   check_existing_key(op_state);
 
@@ -909,12 +923,13 @@ int RGWAccessKeyPool::check_op(RGWUserAdminOpState& op_state,
   return 0;
 }
 
-// Generate a new random key
 int RGWAccessKeyPool::generate_key(RGWUserAdminOpState& op_state, std::string *err_msg)
 {
   std::string duplicate_check_id;
   std::string id;
   std::string key;
+
+  std::map<std::string, RGWAccessKey>::iterator kiter;
 
   std::pair<std::string, RGWAccessKey> key_pair;
   RGWAccessKey new_key;
@@ -932,26 +947,22 @@ int RGWAccessKeyPool::generate_key(RGWUserAdminOpState& op_state, std::string *e
   }
 
   if (op_state.has_existing_key()) {
-    set_err_msg(err_msg, "cannot create existing key");
-    return -EEXIST;
+    if (key_type == KEY_TYPE_SWIFT) {
+      kiter = swift_keys->find(id);
+      new_key = kiter->second;
+      swift_keys->erase(kiter);
+    } else if (key_type == KEY_TYPE_S3) {
+      kiter = access_keys->find(id);
+      new_key = kiter->second;
+      access_keys->erase(kiter);
+    } else {
+      set_err_msg(err_msg, "invalid key type");
+      return -EINVAL;
+    }
   }
 
   if (!gen_access)
     id = op_state.get_access_key();
-
-  if (!id.empty())
-    switch (key_type) {
-    case KEY_TYPE_SWIFT:
-      if (rgw_get_user_info_by_swift(store, id, duplicate_check) >= 0) {
-        set_err_msg(err_msg, "existing swift key in RGW system:" + id);
-        return -EEXIST;
-      }
-    case KEY_TYPE_S3:
-      if (rgw_get_user_info_by_swift(store, id, duplicate_check) >= 0) {
-        set_err_msg(err_msg, "existing s3 key in RGW system:" + id);
-        return -EEXIST;
-      }
-    }
 
   if (op_state.has_subuser())
     new_key.subuser = op_state.get_subuser();
@@ -1020,95 +1031,12 @@ int RGWAccessKeyPool::generate_key(RGWUserAdminOpState& op_state, std::string *e
   return 0;
 }
 
-// modify an existing key
-int RGWAccessKeyPool::modify_key(RGWUserAdminOpState& op_state, std::string *err_msg)
-{
-  std::string id = op_state.get_access_key();
-  std::string key = op_state.get_secret_key();
-  int key_type = op_state.get_key_type();
-
-  RGWAccessKey modify_key;
-
-  pair<string, RGWAccessKey> key_pair;
-  map<std::string, RGWAccessKey>::iterator kiter;
-
-  if (id.empty()) {
-    set_err_msg(err_msg, "no access key specified");
-    return -EINVAL;
-  }
-
-  if (!op_state.has_existing_key()) {
-    set_err_msg(err_msg, "key does not exist");
-    return -EINVAL;
-  }
-
-  key_pair.first = id;
-
-  if (key_type == KEY_TYPE_SWIFT) {
-    kiter = swift_keys->find(id);
-    modify_key = kiter->second;
-  } else if (key_type == KEY_TYPE_S3) {
-    kiter = access_keys->find(id);
-    modify_key = kiter->second;
-  } else {
-    set_err_msg(err_msg, "invalid key type");
-    return -EINVAL;
-  }
-
-  if (op_state.will_gen_secret()) {
-    char secret_key_buf[SECRET_KEY_LEN + 1];
-
-    int ret;
-    int key_buf_size = sizeof(secret_key_buf);
-    ret  = gen_rand_base64(g_ceph_context, secret_key_buf, key_buf_size);
-    if (ret < 0) {
-      set_err_msg(err_msg, "unable to generate secret key");
-      return ret;
-    }
-
-    key = secret_key_buf;
-  }
-
-  if (key.empty()) {
-      set_err_msg(err_msg, "empty secret key");
-      return  -EINVAL;
-  }
-
-  // update the access key with the new secret key
-  modify_key.key = key;
-  key_pair.second = modify_key;
-
-
-  if (key_type == KEY_TYPE_S3)
-    access_keys->insert(key_pair);
-
-  else if (key_type == KEY_TYPE_SWIFT)
-    swift_keys->insert(key_pair);
-
-  return 0;
-}
-
 int RGWAccessKeyPool::execute_add(RGWUserAdminOpState& op_state,
          std::string *err_msg, bool defer_user_update)
 {
-  int ret = 0;
-
   std::string subprocess_msg;
-  int key_op = GENERATE_KEY;
 
-  // set the op
-  if (op_state.has_existing_key())
-    key_op = MODIFY_KEY;
-
-  switch (key_op) {
-  case GENERATE_KEY:
-    ret = generate_key(op_state, &subprocess_msg);
-    break;
-  case MODIFY_KEY:
-    ret = modify_key(op_state, &subprocess_msg);
-    break;
-  }
-
+  int ret = generate_key(op_state, &subprocess_msg);
   if (ret < 0)
     return ret;
 
@@ -1215,6 +1143,11 @@ int RGWAccessKeyPool::remove(RGWUserAdminOpState& op_state, std::string *err_msg
   return 0;
 }
 
+RGWSubUserPool::RGWSubUserPool()
+{
+
+}
+
 RGWSubUserPool::RGWSubUserPool(RGWUser *usr)
 {
    if (!usr || usr->failure)
@@ -1301,40 +1234,36 @@ int RGWSubUserPool::check_op(RGWUserAdminOpState& op_state,
   return 0;
 }
 
-int RGWSubUserPool::execute_add(RGWUserAdminOpState& op_state,
-        std::string *err_msg, bool defer_user_update)
+int RGWSubUserPool::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_user_update)
 {
   int ret = 0;
   std::string subprocess_msg;
-
-  RGWSubUser subuser;
+  std::map<std::string, RGWSubUser>::iterator siter;
   std::pair<std::string, RGWSubUser> subuser_pair;
+
   std::string subuser_str = op_state.get_subuser();
+  RGWSubUser subuser;
+
+  // if the subuser exists already erase and create a new subuser
+  if (op_state.has_existing_subuser()) {
+    siter = subuser_map->find(subuser_str);
+    subuser = siter->second;
+    subuser_map->erase(siter);
+  }
 
   subuser_pair.first = subuser_str;
 
-  // no duplicates
-  if (op_state.has_existing_subuser()) {
-    set_err_msg(err_msg, "subuser exists");
-    return -EEXIST;
-  }
-
-  // assumes key should be created
   if (op_state.has_key_op()) {
-    ret = user->keys->add(op_state, &subprocess_msg, true);
+    ret = user->keys.add(op_state, &subprocess_msg, true);
     if (ret < 0) {
-      set_err_msg(err_msg, "unable to create subuser key, " + subprocess_msg);
+      set_err_msg(err_msg, "unable to create subuser keys, " + subprocess_msg);
       return ret;
     }
   }
 
-  // create the subuser
-  subuser.name = subuser_str;
-
   if (op_state.has_subuser_perm())
     subuser.perm_mask = op_state.get_subuser_perm();
 
-  // insert the subuser into user info
   subuser_pair.second = subuser;
   subuser_map->insert(subuser_pair);
 
@@ -1390,11 +1319,8 @@ int RGWSubUserPool::execute_remove(RGWUserAdminOpState& op_state,
   }
 
   if (op_state.will_purge_keys()) {
-    ret = user->keys->remove(op_state, &subprocess_msg, true);
-    if (ret < 0) {
-      set_err_msg(err_msg, "unable to remove subuser keys, " + subprocess_msg);
-      return ret;
-    }
+    // error would be non-existance so don't check
+    user->keys.remove(op_state, &subprocess_msg, true);
   }
 
   //remove the subuser from the user info
@@ -1435,77 +1361,9 @@ int RGWSubUserPool::remove(RGWUserAdminOpState& op_state, std::string *err_msg, 
   return 0;
 }
 
-int RGWSubUserPool::execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_user_update)
+RGWUserCapPool::RGWUserCapPool()
 {
-  int ret = 0;
-  std::string subprocess_msg;
-  std::map<std::string, RGWSubUser>::iterator siter;
-  std::pair<std::string, RGWSubUser> subuser_pair;
 
-  std::string subuser_str = op_state.get_subuser();
-  RGWSubUser subuser;
-
-  if (!op_state.has_existing_subuser()) {
-    set_err_msg(err_msg, "subuser does not exist");
-    return -EINVAL;
-  }
-
-  subuser_pair.first = subuser_str;
-
-  siter = subuser_map->find(subuser_str);
-  subuser = siter->second;
-
-  if (op_state.has_key_op()) {
-    ret = user->keys->add(op_state, &subprocess_msg, true);
-    if (ret < 0) {
-      set_err_msg(err_msg, "unable to create subuser keys, " + subprocess_msg);
-      return ret;
-    }
-  }
-
-  if (op_state.has_subuser_perm())
-    subuser.perm_mask = op_state.get_subuser_perm();
-
-  subuser_pair.second = subuser;
-
-  subuser_map->erase(siter);
-  subuser_map->insert(subuser_pair);
-
-  // attempt to save the subuser
-  if (!defer_user_update)
-    ret = user->update(op_state, err_msg);
-
-  if (ret < 0)
-    return ret;
-
-  return 0;
-}
-
-int RGWSubUserPool::modify(RGWUserAdminOpState& op_state, std::string *err_msg)
-{
-  return RGWSubUserPool::modify(op_state, err_msg, false);
-}
-
-int RGWSubUserPool::modify(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_user_update)
-{
-  std::string subprocess_msg;
-  int ret;
-
-  RGWSubUser subuser;
-
-  ret = check_op(op_state, &subprocess_msg);
-  if (ret < 0) {
-    set_err_msg(err_msg, "unable to parse request, " + subprocess_msg);
-    return ret;
-  }
-
-  ret = execute_modify(op_state, &subprocess_msg, defer_user_update);
-  if (ret < 0) {
-    set_err_msg(err_msg, "unable to modify subuser, " + subprocess_msg);
-    return ret;
-  }
-
-  return 0;
 }
 
 RGWUserCapPool::RGWUserCapPool(RGWUser *usr)
@@ -1629,11 +1487,6 @@ int RGWUserCapPool::remove(RGWUserAdminOpState& op_state, std::string *err_msg, 
   return 0;
 }
 
-RGWUser::RGWUser()
-{
-  init_default();
-}
-
 RGWUser::RGWUser(RGWRados *storage)
 {
   init_default();
@@ -1657,19 +1510,7 @@ RGWUser::RGWUser(RGWRados *storage, RGWUserAdminOpState& op_state)
 
 RGWUser::~RGWUser()
 {
-  clear_members();
-}
 
-void RGWUser::clear_members()
-{
-  if (keys != NULL)
-    delete keys;
-
-  if (caps != NULL)
-    delete caps;
-
-  if (subusers != NULL)
-    delete subusers;
 }
 
 void RGWUser::init_default()
@@ -1680,10 +1521,6 @@ void RGWUser::init_default()
 
   clear_failure();
   clear_populated();
-
-  keys = NULL;
-  caps = NULL;
-  subusers = NULL;
 }
 
 int RGWUser::init_storage(RGWRados *storage)
@@ -1698,10 +1535,9 @@ int RGWUser::init_storage(RGWRados *storage)
   clear_failure();
   clear_populated();
 
-  /* API wrappers */
-  keys = new RGWAccessKeyPool(this);
-  caps = new RGWUserCapPool(this);
-  subusers = new RGWSubUserPool(this);
+  keys = RGWAccessKeyPool(this);
+  subusers = RGWSubUserPool(this);
+  caps = RGWUserCapPool(this);
 
   return 0;
 }
@@ -1761,18 +1597,15 @@ int RGWUser::init_members(RGWUserAdminOpState& op_state)
 {
   int ret = 0;
 
-  if (!keys || !subusers || !caps)
-    return -EINVAL;
-
-  ret = keys->init(op_state);
+  ret = keys.init(op_state);
   if (ret < 0)
     return ret;
 
-  ret = subusers->init(op_state);
+  ret = subusers.init(op_state);
   if (ret < 0)
     return ret;
 
-  ret = caps->init(op_state);
+  ret = caps.init(op_state);
   if (ret < 0)
     return ret;
 
@@ -1821,7 +1654,7 @@ int RGWUser::check_op(RGWUserAdminOpState& op_state, std::string *err_msg)
   std::string subprocess_msg;
   bool same_id;
   bool populated;
-  bool existing_email = false;
+  //bool existing_email = false; // this check causes a fault
   std::string op_id = op_state.get_user_id();
   std::string op_email = op_state.get_user_email();
 
@@ -1842,13 +1675,14 @@ int RGWUser::check_op(RGWUserAdminOpState& op_state, std::string *err_msg)
     return -EINVAL;
   }
 
+/*
   // check for an existing user email
   if (!op_email.empty())
     existing_email = (rgw_get_user_info_by_email(store, op_email, user_info) >= 0);
 
   if (existing_email)
     op_state.set_existing_email();
-
+*/
   return 0;
 }
 
@@ -1912,7 +1746,7 @@ int RGWUser::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg)
 
   // see if we need to add an access key
   if (op_state.has_key_op()) {
-    ret = keys->add(op_state, &subprocess_msg, defer_user_update);
+    ret = keys.add(op_state, &subprocess_msg, defer_user_update);
     if (ret < 0) {
       set_err_msg(err_msg, "unable to create access key, " + subprocess_msg);
       return ret;
@@ -1921,7 +1755,7 @@ int RGWUser::execute_add(RGWUserAdminOpState& op_state, std::string *err_msg)
 
   // see if we need to add some caps
   if (op_state.has_caps_op()) {
-    ret = caps->add(op_state, &subprocess_msg, defer_user_update);
+    ret = caps.add(op_state, &subprocess_msg, defer_user_update);
     if (ret < 0) {
       set_err_msg(err_msg, "unable to add user capabilities, " + subprocess_msg);
       return ret;
@@ -2026,7 +1860,7 @@ int RGWUser::remove(RGWUserAdminOpState& op_state, std::string *err_msg)
 
 int RGWUser::execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg)
 {
-  bool same_email = true;
+  bool same_email = false;
   bool populated = op_state.is_populated();
   bool defer_user_update = true;
   int ret = 0;
@@ -2067,11 +1901,15 @@ int RGWUser::execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg)
 
   // make sure we are not adding a duplicate email
   if (!op_email.empty() && !same_email) {
+
+/*
+    // this check causes a cluster fault
     ret = rgw_get_user_info_by_email(store, op_email, duplicate_check);
     if (ret >= 0) {
       set_err_msg(err_msg, "cannot add duplicate email");
       return -EEXIST;
     }
+*/
 
     user_info.user_email = op_email;
   }
@@ -2121,7 +1959,7 @@ int RGWUser::execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg)
 
   // if we're supposed to modify keys, do so
   if (op_state.has_key_op()) {
-    ret = keys->add(op_state, &subprocess_msg, defer_user_update);
+    ret = keys.add(op_state, &subprocess_msg, defer_user_update);
     if (ret < 0) {
       set_err_msg(err_msg, "unable to create or modify keys, " + subprocess_msg);
       return ret;
@@ -2196,7 +2034,8 @@ int RGWUserAdminOp_User::info(RGWRados *store, RGWUserAdminOpState& op_state,
 
   flusher.start(0);
 
-  int ret = user.info(op_state, info, NULL);
+  // the user should have already been populated at construction
+  int ret = user.info(info, NULL);
   if (ret < 0);
     return ret;
 
@@ -2272,7 +2111,7 @@ int RGWUserAdminOp_Subuser::create(RGWRados *store, RGWUserAdminOpState& op_stat
 
   flusher.start(0);
 
-  int ret = user.subusers->add(op_state, NULL);
+  int ret = user.subusers.add(op_state, NULL);
   if (ret < 0)
     return ret;
 
@@ -2295,7 +2134,7 @@ int RGWUserAdminOp_Subuser::modify(RGWRados *store, RGWUserAdminOpState& op_stat
 
   flusher.start(0);
 
-  int ret = user.subusers->modify(op_state, NULL);
+  int ret = user.subusers.add(op_state, NULL);
   if (ret < 0)
     return ret;
 
@@ -2315,7 +2154,7 @@ int RGWUserAdminOp_Subuser::remove(RGWRados *store, RGWUserAdminOpState& op_stat
   RGWUserInfo info;
   RGWUser user(store, op_state);
 
-  int ret = user.subusers->remove(op_state, NULL);
+  int ret = user.subusers.remove(op_state, NULL);
   if (ret < 0)
     return ret;
 
@@ -2331,7 +2170,7 @@ int RGWUserAdminOp_Key::create(RGWRados *store, RGWUserAdminOpState& op_state,
 
   flusher.start(0);
 
-  int ret = user.keys->add(op_state, NULL);
+  int ret = user.keys.add(op_state, NULL);
   if (ret < 0)
     return ret;
 
@@ -2358,7 +2197,7 @@ int RGWUserAdminOp_Key::remove(RGWRados *store, RGWUserAdminOpState& op_state,
   RGWUserInfo info;
   RGWUser user(store, op_state);
 
-  int ret = user.keys->remove(op_state, NULL);
+  int ret = user.keys.remove(op_state, NULL);
   if (ret < 0)
     return ret;
 

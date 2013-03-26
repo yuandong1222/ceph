@@ -291,7 +291,6 @@ struct RGWUserAdminOpState {
 
     subuser_specified = true;
     gen_access = true;
-    key_op = true;
   }
   void set_caps(std::string& _caps) {
     if (_caps.empty())
@@ -327,9 +326,19 @@ struct RGWUserAdminOpState {
     gen_secret = true;
     key_op = true;
   }
-  void set_gen_key() {
-    gen_access = true;
-    gen_secret = true;
+  void set_generate_key() {
+    if (id.empty())
+      gen_access = true;
+    if (key.empty())
+      gen_secret = true;
+    key_op = true;
+  }
+  void clear_generate_key() {
+    gen_access = false;
+    gen_secret = false;
+  }
+  void set_purge_keys() {
+    purge_keys = true;
     key_op = true;
   }
 
@@ -357,7 +366,6 @@ struct RGWUserAdminOpState {
   void set_existing_key() { existing_key = true; };
   void set_existing_subuser() { existing_subuser = true; };
   void set_existing_email() { existing_email = true; };
-  void set_purge_keys() { purge_keys = true; };
   void set_purge_data() { purge_data = true; };
   void set_generate_subuser() { gen_subuser = true; };
   __u8 get_suspension_status() { return suspended; };
@@ -435,8 +443,8 @@ struct RGWUserAdminOpState {
     subuser_specified = false;
     caps_specified = false;
     purge_keys = false;
-    gen_secret = true;
-    gen_access = true;
+    gen_secret = false;
+    gen_access = false;
     gen_subuser = false;
     id_specified = false;
     key_specified = false;
@@ -486,6 +494,7 @@ private:
   int add(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
   int remove(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
 public:
+  RGWAccessKeyPool();
   RGWAccessKeyPool(RGWUser* usr);
   ~RGWAccessKeyPool();
 
@@ -515,12 +524,11 @@ private:
   /* API Contract Fulfillment */
   int execute_add(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
   int execute_remove(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
-  int execute_modify(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
 
   int add(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
   int remove(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
-  int modify(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
 public:
+  RGWSubUserPool();
   RGWSubUserPool(RGWUser *user);
   ~RGWSubUserPool();
 
@@ -530,7 +538,6 @@ public:
   /* API contracted methods */
   int add(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
   int remove(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
-  int modify(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
 
   friend class RGWUser;
 };
@@ -546,6 +553,7 @@ private:
   int remove(RGWUserAdminOpState& op_state, std::string *err_msg, bool defer_save);
 
 public:
+  RGWUserCapPool();
   RGWUserCapPool(RGWUser *user);
   ~RGWUserCapPool();
 
@@ -605,9 +613,9 @@ public:
   bool has_failed() { return failure; };
 
   /* API Contracted Members */
-  RGWUserCapPool *caps;
-  RGWAccessKeyPool *keys;
-  RGWSubUserPool *subusers;
+  RGWUserCapPool caps;
+  RGWAccessKeyPool keys;
+  RGWSubUserPool subusers;
 
   /* API Contracted Methods */
   int add(RGWUserAdminOpState& op_state, std::string *err_msg = NULL);
