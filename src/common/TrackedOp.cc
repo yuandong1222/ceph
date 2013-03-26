@@ -128,7 +128,7 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
   utime_t too_old = now;
   too_old -= g_conf->osd_op_complaint_time;
 
-  utime_t oldest_secs = now - ops_in_flight.front()->received_time;
+  utime_t oldest_secs = now - ops_in_flight.front()->get_arrived();
 
   dout(10) << "ops_in_flight.size: " << ops_in_flight.size()
            << "; oldest is " << oldest_secs
@@ -142,11 +142,11 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
 
   int slow = 0;     // total slow
   int warned = 0;   // total logged
-  while (!i.end() && (*i)->received_time < too_old) {
+  while (!i.end() && (*i)->get_arrived() < too_old) {
     slow++;
 
     // exponential backoff of warning intervals
-    if (((*i)->received_time +
+    if (((*i)->get_arrived() +
 	 (g_conf->osd_op_complaint_time *
 	  (*i)->warn_interval_multiplier)) < now) {
       // will warn
@@ -156,9 +156,9 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
       if (warned > g_conf->osd_op_log_threshold)
         break;
 
-      utime_t age = now - (*i)->received_time;
+      utime_t age = now - (*i)->get_arrived();
       stringstream ss;
-      ss << "slow request " << age << " seconds old, received at " << (*i)->received_time
+      ss << "slow request " << age << " seconds old, received at " << (*i)->get_arrived()
 	 << ": " << *((*i)->request) << " currently "
 	 << ((*i)->current.size() ? (*i)->current : (*i)->state_string());
       warning_vector.push_back(ss.str());

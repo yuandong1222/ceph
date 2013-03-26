@@ -110,7 +110,6 @@ protected:
 
   list<pair<utime_t, string> > events; /// list of events and their times
   Mutex lock; /// to protect the events list
-  utime_t received_time; /// the time the triggering Message was received
   string current; /// the current state the event is in
   uint64_t seq; /// a unique seq set by the OpTracker
 
@@ -124,7 +123,6 @@ protected:
     lock("TrackedOp::lock"),
     seq(0),
     warn_interval_multiplier(1) {
-    received_time = request->get_recv_stamp();
     tracker->register_inflight_op(&xitem);
   }
 
@@ -134,12 +132,12 @@ public:
   virtual ~TrackedOp() { assert(request); request->put(); }
 
   utime_t get_arrived() const {
-    return received_time;
+    return request->get_recv_stamp();
   }
   // This function maybe needs some work; assumes last event is completion time
   double get_duration() const {
     return events.size() ?
-      (events.rbegin()->first - received_time) :
+      (events.rbegin()->first - get_arrived()) :
       0.0;
   }
   Message *get_req() const { return request; }
