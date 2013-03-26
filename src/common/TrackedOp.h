@@ -40,6 +40,8 @@ public:
     warn_interval_multiplier(1),
     seq(0) {}
 
+  virtual void init_from_message() {};
+
   virtual ~TrackedOp() {}
 
   utime_t get_arrived() const {
