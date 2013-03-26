@@ -78,9 +78,6 @@ private:
     rmw_flags(0),
     hit_flag_points(0), latest_flag_point(0) {}
 public:
-  ~OpRequest() {
-    assert(request);
-  }
 
   bool been_queued_for_pg() { return hit_flag_points & flag_queued_for_pg; }
   bool been_reached_pg() { return hit_flag_points & flag_reached_pg; }
