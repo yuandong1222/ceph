@@ -678,4 +678,14 @@ public:
                   RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher);
 };
 
+class RGWUserAdminOp_Caps
+{
+public:
+  static int add(RGWRados *store,
+		  RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher);
+
+  static int remove(RGWRados *store,
+		  RGWUserAdminOpState& op_state, RGWFormatterFlusher& flusher);
+};
+
 #endif

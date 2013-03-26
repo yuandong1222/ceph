@@ -547,7 +547,7 @@ uint32_t rgw_str_to_perm(const char *str)
   else if (strcasecmp(str, "full") == 0)
     return RGW_PERM_FULL_CONTROL;
 
-  return -1;
+  return 0; // better to return no permission
 }
 
 static bool validate_access_key(string& key)
@@ -2200,6 +2200,52 @@ int RGWUserAdminOp_Key::remove(RGWRados *store, RGWUserAdminOpState& op_state,
   int ret = user.keys.remove(op_state, NULL);
   if (ret < 0)
     return ret;
+
+  return 0;
+}
+
+int RGWUserAdminOp_Caps::add(RGWRados *store, RGWUserAdminOpState& op_state,
+                  RGWFormatterFlusher& flusher)
+{
+  RGWUserInfo info;
+  RGWUser user(store, op_state);
+  Formatter *formatter = flusher.get_formatter();
+
+  flusher.start(0);
+
+  int ret = user.caps.add(op_state, NULL);
+  if (ret < 0)
+    return ret;
+
+  ret = user.info(info, NULL);
+  if (ret < 0)
+    return ret;
+
+  info.caps.dump(formatter);
+  flusher.flush();
+
+  return 0;
+}
+
+int RGWUserAdminOp_Caps::remove(RGWRados *store, RGWUserAdminOpState& op_state,
+                  RGWFormatterFlusher& flusher)
+{
+  RGWUserInfo info;
+  RGWUser user(store, op_state);
+  Formatter *formatter = flusher.get_formatter();
+
+  flusher.start(0);
+
+  int ret = user.caps.remove(op_state, NULL);
+  if (ret < 0)
+    return ret;
+
+  ret = user.info(info, NULL);
+  if (ret < 0)
+    return ret;
+
+  info.caps.dump(formatter);
+  flusher.flush();
 
   return 0;
 }
