@@ -63,7 +63,6 @@ struct OpRequest : public TrackedOp {
   void dump(utime_t now, Formatter *f) const;
 
 private:
-  OpTracker *tracker;
   osd_reqid_t reqid;
   uint8_t hit_flag_points;
   uint8_t latest_flag_point;
@@ -75,13 +74,9 @@ private:
   static const uint8_t flag_commit_sent = 1 << 5;
 
   OpRequest(Message *req, OpTracker *tracker) :
-    TrackedOp(req),
+    TrackedOp(req, tracker),
     rmw_flags(0),
-    tracker(tracker),
-    hit_flag_points(0), latest_flag_point(0) {
-    received_time = request->get_recv_stamp();
-    tracker->register_inflight_op(&xitem);
-  }
+    hit_flag_points(0), latest_flag_point(0) {}
 public:
   ~OpRequest() {
     assert(request);
