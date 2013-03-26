@@ -202,3 +202,13 @@ void OpTracker::RemoveOnDelete::operator()(TrackedOp *op) {
   tracker->unregister_inflight_op(op);
   // Do not delete op, unregister_inflight_op took control
 }
+
+void TrackedOp::mark_event(const string &event)
+{
+  utime_t now = ceph_clock_now(g_ceph_context);
+  {
+    Mutex::Locker l(lock);
+    events.push_back(make_pair(now, event));
+  }
+  tracker->mark_event(this, event);
+}

@@ -144,7 +144,7 @@ public:
       0.0;
   }
 
-  virtual void mark_event(const string &event) = 0;
+  virtual void mark_event(const string &event);
   virtual const char *state_string() const = 0;
   virtual void dump(utime_t now, Formatter *f) const = 0;
 };

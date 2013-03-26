@@ -44,16 +44,6 @@ void OpRequest::dump(utime_t now, Formatter *f) const
   }
 }
 
-void OpRequest::mark_event(const string &event)
-{
-  utime_t now = ceph_clock_now(g_ceph_context);
-  {
-    Mutex::Locker l(lock);
-    events.push_back(make_pair(now, event));
-  }
-  tracker->mark_event(this, event);
-}
-
 void OpRequest::init_from_message()
 {
   if (request->get_type() == CEPH_MSG_OSD_OP) {

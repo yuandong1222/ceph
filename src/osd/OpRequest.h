@@ -146,7 +146,6 @@ public:
     latest_flag_point = flag_commit_sent;
   }
 
-  void mark_event(const string &event);
   osd_reqid_t get_reqid() const {
     return reqid;
   }
