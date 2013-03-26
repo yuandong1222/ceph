@@ -35,7 +35,6 @@ struct OpRequest : public TrackedOp {
   friend class OpTracker;
   // rmw flags
   int rmw_flags;
-  Message *request;
 
   bool check_rmw(int flag) {
     return rmw_flags & flag;
@@ -77,13 +76,10 @@ private:
   OpRequest(Message *req, OpTracker *tracker) :
     TrackedOp(req, tracker),
     rmw_flags(0),
-    request(req),
     hit_flag_points(0), latest_flag_point(0) {}
 public:
   ~OpRequest() {
     assert(request);
-    request->put();
-    TrackedOp::request = NULL;
   }
 
   bool been_queued_for_pg() { return hit_flag_points & flag_queued_for_pg; }

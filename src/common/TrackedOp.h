@@ -142,6 +142,7 @@ public:
       (events.rbegin()->first - received_time) :
       0.0;
   }
+  Message *get_req() const { return request; }
 
   virtual void mark_event(const string &event);
   virtual const char *state_string() const = 0;
