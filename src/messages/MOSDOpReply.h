@@ -44,6 +44,7 @@ class MOSDOpReply : public Message {
   int32_t retry_attempt;
 
 public:
+  static const int MESSAGE_TYPE_ID = CEPH_MSG_OSD_OPREPLY;
   object_t get_oid() const { return oid; }
   pg_t     get_pg() const { return pgid; }
   int      get_flags() const { return flags; }

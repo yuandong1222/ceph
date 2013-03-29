@@ -22,6 +22,7 @@
 
 class MMonProbe : public Message {
 public:
+  static const int MESSAGE_TYPE_ID = MSG_MON_PROBE;
   static const int HEAD_VERSION = 4;
   static const int COMPAT_VERSION = 4;
 

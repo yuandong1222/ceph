@@ -19,6 +19,7 @@
 
 class MPGStatsAck : public Message {
 public:
+  static const int MESSAGE_TYPE_ID = MSG_PGSTATSACK;
   map<pg_t,eversion_t> pg_stat;
   
   MPGStatsAck() : Message(MSG_PGSTATSACK) {}

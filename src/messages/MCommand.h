@@ -22,6 +22,7 @@
 
 class MCommand : public Message {
  public:
+   static const int MESSAGE_TYPE_ID = MSG_MON_COMMAND;
   uuid_d fsid;
   std::vector<string> cmd;
 

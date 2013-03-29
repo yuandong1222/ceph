@@ -26,6 +26,7 @@ class MOSDBoot : public PaxosServiceMessage {
   static const int COMPAT_VERSION = 2;
 
  public:
+   static const int MESSAGE_TYPE_ID = MSG_OSD_BOOT;
   OSDSuperblock sb;
   entity_addr_t hb_addr;
   entity_addr_t cluster_addr;
