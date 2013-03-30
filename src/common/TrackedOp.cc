@@ -38,14 +38,14 @@ void OpHistory::cleanup(utime_t now)
 {
   while (arrived.size() &&
 	 (now - arrived.begin()->first >
-	  (double)(g_conf->osd_op_history_duration))) {
+	  (double)(g_conf->op_tracker_history_duration))) {
     duration.erase(make_pair(
 	arrived.begin()->second->get_duration(),
 	arrived.begin()->second));
     arrived.erase(arrived.begin());
   }
 
-  while (duration.size() > g_conf->osd_op_history_size) {
+  while (duration.size() > g_conf->op_tracker_history_size) {
     arrived.erase(make_pair(
 	duration.begin()->second->get_arrived(),
 	duration.begin()->second));
@@ -57,8 +57,8 @@ void OpHistory::dump_ops(utime_t now, Formatter *f)
 {
   cleanup(now);
   f->open_object_section("OpHistory");
-  f->dump_int("num to keep", g_conf->osd_op_history_size);
-  f->dump_int("duration to keep", g_conf->osd_op_history_duration);
+  f->dump_int("num to keep", g_conf->op_tracker_history_size);
+  f->dump_int("duration to keep", g_conf->op_tracker_history_duration);
   {
     f->open_array_section("Ops");
     for (set<pair<utime_t, TrackedOpRef> >::const_iterator i =
@@ -126,7 +126,7 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
 
   utime_t now = ceph_clock_now(g_ceph_context);
   utime_t too_old = now;
-  too_old -= g_conf->osd_op_complaint_time;
+  too_old -= g_conf->op_tracker_complaint_time;
 
   utime_t oldest_secs = now - ops_in_flight.front()->get_arrived();
 
@@ -134,11 +134,11 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
            << "; oldest is " << oldest_secs
            << " seconds old" << dendl;
 
-  if (oldest_secs < g_conf->osd_op_complaint_time)
+  if (oldest_secs < g_conf->op_tracker_complaint_time)
     return false;
 
   xlist<TrackedOp*>::iterator i = ops_in_flight.begin();
-  warning_vector.reserve(g_conf->osd_op_log_threshold + 1);
+  warning_vector.reserve(g_conf->op_tracker_log_threshold + 1);
 
   int slow = 0;     // total slow
   int warned = 0;   // total logged
@@ -147,13 +147,13 @@ bool OpTracker::check_ops_in_flight(std::vector<string> &warning_vector)
 
     // exponential backoff of warning intervals
     if (((*i)->get_arrived() +
-	 (g_conf->osd_op_complaint_time *
+	 (g_conf->op_tracker_complaint_time *
 	  (*i)->warn_interval_multiplier)) < now) {
       // will warn
       if (warning_vector.empty())
 	warning_vector.push_back("");
       warned++;
-      if (warned > g_conf->osd_op_log_threshold)
+      if (warned > g_conf->op_tracker_log_threshold)
         break;
 
       utime_t age = now - (*i)->get_arrived();

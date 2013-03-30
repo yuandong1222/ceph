@@ -424,9 +424,9 @@ OPTION(osd_default_notify_timeout, OPT_U32, 30) // default notify timeout in sec
 OPTION(osd_kill_backfill_at, OPT_INT, 0)
 OPTION(osd_min_pg_log_entries, OPT_U32, 3000)  // number of entries to keep in the pg log when trimming it
 OPTION(osd_max_pg_log_entries, OPT_U32, 10000) // max entries, say when degraded, before we trim
-OPTION(osd_op_complaint_time, OPT_FLOAT, 30) // how many seconds old makes an op complaint-worthy
+OPTION(op_tracker_complaint_time, OPT_FLOAT, 30) // how many seconds old makes an op complaint-worthy
 OPTION(osd_command_max_records, OPT_INT, 256)
-OPTION(osd_op_log_threshold, OPT_INT, 5) // how many op log messages to show in one go
+OPTION(op_tracker_log_threshold, OPT_INT, 5) // how many op log messages to show in one go
 OPTION(osd_verify_sparse_read_holes, OPT_BOOL, false)  // read fiemap-reported holes and verify they are zeros
 OPTION(osd_debug_drop_ping_probability, OPT_DOUBLE, 0)
 OPTION(osd_debug_drop_ping_duration, OPT_INT, 0)
@@ -436,8 +436,8 @@ OPTION(osd_debug_drop_op_probability, OPT_DOUBLE, 0)   // probability of stallin
 OPTION(osd_debug_op_order, OPT_BOOL, false)
 OPTION(osd_debug_verify_snaps_on_info, OPT_BOOL, false)
 OPTION(osd_debug_skip_full_check_in_backfill_reservation, OPT_BOOL, false)
-OPTION(osd_op_history_size, OPT_U32, 20)    // Max number of completed ops to track
-OPTION(osd_op_history_duration, OPT_U32, 600) // Oldest completed op to track
+OPTION(op_tracker_history_size, OPT_U32, 20)    // Max number of completed ops to track
+OPTION(op_tracker_history_duration, OPT_U32, 600) // Oldest completed op to track
 OPTION(osd_target_transaction_size, OPT_INT, 30)     // to adjust various transactions that batch smaller items
 OPTION(osd_failsafe_full_ratio, OPT_FLOAT, .97) // what % full makes an OSD "full" (failsafe)
 OPTION(osd_failsafe_nearfull_ratio, OPT_FLOAT, .90) // what % full makes an OSD near full (failsafe)
