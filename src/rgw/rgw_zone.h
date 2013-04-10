@@ -37,7 +37,7 @@ struct RGWZoneAdminOpState {
   bool show_log_sum;
   bool silent;
 
-  void set_create_pool() { create_pool = true; };
+  void set_create_pools() { create_pool = true; };
   void set_show_log_entries() { show_log_entries = true; };
   void set_skip_zero_entries() { skip_zero_entries = true; };
   void set_show_log_sum() { show_log_sum = true; };
