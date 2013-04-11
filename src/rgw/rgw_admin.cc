@@ -11,6 +11,7 @@ using namespace std;
 #include "common/config.h"
 #include "common/ceph_argparse.h"
 #include "common/Formatter.h"
+#include "common/ceph_json.h"
 #include "global/global_init.h"
 #include "common/errno.h"
 #include "include/utime.h"
@@ -974,11 +975,8 @@ int main(int argc, char **argv)
   if (purge_keys)
     user_op.set_purge_keys();
 
-  if (gen_access_key)
-    user_op.set_generate_key();
-
-  if (gen_secret_key)
-    user_op.set_gen_secret(); // assume that a key pair should be created
+  if (gen_access_key || gen_secret_key)
+    user_op.set_generate_key(true);
 
   if (max_buckets >= 0)
     user_op.set_max_buckets(max_buckets);
@@ -1008,7 +1006,7 @@ int main(int argc, char **argv)
 
   /* populate bucket operation */
   bucket_op.set_bucket_name(bucket_name);
-  bucket_op.set_object(object);
+  bucket_op.set_object_name(object);
   bucket_op.set_check_objects(check_objects);
   bucket_op.set_delete_children(delete_child_objects);
 
@@ -1044,7 +1042,7 @@ int main(int argc, char **argv)
   case OPT_USER_INFO:
     break;
   case OPT_USER_CREATE:
-    user_op.set_generate_key(); // generate a new key by default
+    user_op.set_generate_key(true);
     ret = user.add(user_op, &err_msg);
     if (ret < 0) {
       cerr << "could not create user: " << err_msg << std::endl;
