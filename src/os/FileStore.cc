@@ -3873,6 +3873,13 @@ int FileStore::getattr(coll_t cid, const hobject_t& oid, const char *name, buffe
   }
  out:
   dout(10) << "getattr " << cid << "/" << oid << " '" << name << "' = " << r << dendl;
+  {
+    dout(30) << " value is \n";
+    bufferlist foo;
+    foo.append(bp);
+    foo.hexdump(*_dout);
+    *_dout << dendl;
+  }
   assert(!m_filestore_fail_eio || r != -EIO);
   if (g_conf->filestore_debug_inject_read_err &&
       debug_mdata_eio(oid)) {
@@ -3964,6 +3971,14 @@ int FileStore::_setattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>
   for (map<string,bufferptr>::iterator p = aset.begin();
        p != aset.end();
        ++p) {
+    {
+      dout(30) << "setattrs " << cid << "/" << oid << " " << p->first << ": \n";
+      bufferlist foo;
+      foo.append(p->second);
+      foo.hexdump(*_dout);
+      *_dout << dendl;
+    }
+
     char n[CHAIN_XATTR_MAX_NAME_LEN];
     get_attrname(p->first.c_str(), n, CHAIN_XATTR_MAX_NAME_LEN);
     if (g_conf->filestore_xattr_use_omap) {
