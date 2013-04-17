@@ -4016,6 +4016,20 @@ int FileStore::_setattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>
   if (r < 0)
     return r;
 
+  { // DEBUG XATTR
+    for (map<string, bufferptr>::iterator i = inline_to_set.begin();
+	 i != inline_to_set.end();
+	 ++i) {
+      bufferptr bp;
+      r = _fgetattr(fd, i->first.c_str(), bp);
+      assert(r >= 0);
+      bufferlist bl, bl2;
+      bl.push_back(i->second);
+      bl2.push_back(bp);
+      assert(bl == bl2);
+    }
+  }
+
   if (!omap_remove.empty()) {
     assert(g_conf->filestore_xattr_use_omap);
     r = object_map->remove_xattrs(oid, omap_remove, &spos);
