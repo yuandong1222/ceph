@@ -4022,7 +4022,12 @@ int FileStore::_setattrs(coll_t cid, const hobject_t& oid, map<string,bufferptr>
 	 ++i) {
       bufferptr bp;
       r = _fgetattr(fd, i->first.c_str(), bp);
-      assert(r >= 0);
+      if (r < 0) {
+	derr << __func__ << ": _fgetattr returned " << cpp_strerror(-r)
+	     << " on read of attr " << i->first << " for object "
+	     << oid << dendl;
+	assert(0);
+      }
       bufferlist bl, bl2;
       bl.push_back(i->second);
       bl2.push_back(bp);
