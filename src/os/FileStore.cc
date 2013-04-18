@@ -3736,11 +3736,15 @@ int FileStore::_fgetattrs(int fd, map<string,bufferptr>& aset, bool user_only)
     len = chain_flistxattr(fd, names2, len);
     dout(10) << " -ERANGE, got " << len << dendl;
     if (len < 0) {
+      derr << __func__ << ": flistxattr(len) ret " << cpp_strerror(len)
+	   << dendl;
       assert(!m_filestore_fail_eio || len != -EIO);
       return len;
     }
     name = names2;
   } else if (len < 0) {
+    derr << __func__ << ": flistxattr ret " << cpp_strerror(len)
+	 << dendl;
     assert(!m_filestore_fail_eio || len != -EIO);
     return len;
   } else {
@@ -3763,8 +3767,11 @@ int FileStore::_fgetattrs(int fd, map<string,bufferptr>& aset, bool user_only)
       if (*set_name && can_get) {
         dout(20) << "fgetattrs " << fd << " getting '" << name << "'" << dendl;
         int r = _fgetattr(fd, attrname, aset[set_name]);
-        if (r < 0)
+        if (r < 0) {
+	  derr << __func__ << ": fgetattr ret " << cpp_strerror(r)
+	       << dendl;
 	  return r;
+	}
       }
     }
     name += strlen(name) + 1;
