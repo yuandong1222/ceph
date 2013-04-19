@@ -1983,6 +1983,10 @@ void PG::finish_recovery(list<Context*>& tfin)
 void PG::_finish_recovery(Context *c)
 {
   lock();
+  if (deleting) {
+    unlock();
+    return;
+  }
   if (c == finish_sync_event) {
     dout(10) << "_finish_recovery" << dendl;
     finish_sync_event = 0;
@@ -4900,7 +4904,8 @@ struct FlushState {
   FlushState(PG *pg, epoch_t epoch) : pg(pg), epoch(epoch) {}
   ~FlushState() {
     pg->lock();
-    pg->queue_flushed(epoch);
+    if (!pg->pg_has_reset_since(epoch))
+      pg->queue_flushed(epoch);
     pg->unlock();
   }
 };
