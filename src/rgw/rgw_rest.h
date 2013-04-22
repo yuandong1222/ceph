@@ -234,7 +234,7 @@ public:
   int get_params();
 };
 
-class RGWRESTOp : public RGWOp {
+class RGWRESTOp : virtual public RGWOp {
 protected:
   int http_ret;
   RGWRESTFlusher flusher;

@@ -270,6 +270,165 @@ int rgw_build_policies(RGWRados *store, struct req_state *s, bool only_bucket, b
   return ret;
 }
 
+int RGWGetObj::send_response_data_swift(bufferlist& bl, off_t bl_ofs, off_t bl_len)
+{
+  const char *content_type = NULL;
+  int orig_ret = ret;
+  map<string, string> response_attrs;
+  map<string, string>::iterator riter;
+
+  if (sent_header)
+    goto send_data;
+
+  if (range_str)
+    dump_range(s, ofs, start, s->obj_size);
+
+  dump_content_length(s, total_len);
+  dump_last_modified(s, lastmod);
+
+  if (!ret) {
+    map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_ETAG);
+    if (iter != attrs.end()) {
+      bufferlist& bl = iter->second;
+      if (bl.length()) {
+        char *etag = bl.c_str();
+        dump_etag(s, etag);
+      }
+    }
+
+    for (iter = attrs.begin(); iter != attrs.end(); ++iter) {
+      const char *name = iter->first.c_str();
+      map<string, string>::iterator aiter = rgw_to_http_attrs.find(name);
+      if (aiter != rgw_to_http_attrs.end()) {
+        if (aiter->first.compare(RGW_ATTR_CONTENT_TYPE) == 0) { // special handling for content_type
+          content_type = iter->second.c_str();
+          continue;
+        }
+        response_attrs[aiter->second] = iter->second.c_str();
+      } else {
+        if (strncmp(name, RGW_ATTR_META_PREFIX, sizeof(RGW_ATTR_META_PREFIX)-1) == 0) {
+          name += sizeof(RGW_ATTR_META_PREFIX) - 1;
+          s->cio->print("X-%s-Meta-%s: %s\r\n", (s->object ? "Object" : "Container"), name, iter->second.c_str());
+        }
+      }
+    }
+  }
+
+  if (partial_content && !ret)
+    ret = -STATUS_PARTIAL_CONTENT;
+
+  if (ret)
+    set_req_state_err(s, ret);
+  dump_errno(s);
+
+  for (riter = response_attrs.begin(); riter != response_attrs.end(); ++riter) {
+    s->cio->print("%s: %s\n", riter->first.c_str(), riter->second.c_str());
+  }
+
+  if (!content_type)
+    content_type = "binary/octet-stream";
+  end_header(s, content_type);
+
+  sent_header = true;
+
+send_data:
+  if (get_data && !orig_ret) {
+    int r = s->cio->write(bl.c_str() + bl_ofs, bl_len);
+    if (r < 0)
+      return r;
+  }
+  rgw_flush_formatter_and_reset(s, s->formatter);
+
+  return 0;
+}
+
+int RGWGetObj::send_response_data_s3(bufferlist& bl, off_t bl_ofs, off_t bl_len)
+{
+  const char *content_type = NULL;
+  string content_type_str;
+  map<string, string> response_attrs;
+  map<string, string>::iterator riter;
+
+  if (ret)
+    goto done;
+
+  if (sent_header)
+    goto send_data;
+
+  if (range_str)
+    dump_range(s, start, end, s->obj_size);
+
+  dump_content_length(s, total_len);
+  dump_last_modified(s, lastmod);
+
+  if (!ret) {
+    map<string, bufferlist>::iterator iter = attrs.find(RGW_ATTR_ETAG);
+    if (iter != attrs.end()) {
+      bufferlist& bl = iter->second;
+      if (bl.length()) {
+        char *etag = bl.c_str();
+        dump_etag(s, etag);
+      }
+    }
+
+    for (const struct response_attr_param *p = rgw_resp_attr_params; p->param; p++) {
+      bool exists;
+      string val = s->args.get(p->param, &exists);
+      if (exists) {
+        if (strcmp(p->param, "response-content-type") != 0) {
+          response_attrs[p->http_attr] = val;
+        } else {
+          content_type_str = val;
+          content_type = content_type_str.c_str();
+        }
+      }
+    }
+
+    for (iter = attrs.begin(); iter != attrs.end(); ++iter) {
+      const char *name = iter->first.c_str();
+      map<string, string>::iterator aiter = rgw_to_http_attrs.find(name);
+      if (aiter != rgw_to_http_attrs.end()) {
+        if (response_attrs.count(aiter->second) > 0) // was already overridden by a response param
+          continue;
+
+        if ((!content_type) && aiter->first.compare(RGW_ATTR_CONTENT_TYPE) == 0) { // special handling for content_type
+          content_type = iter->second.c_str();
+          continue;
+        }
+        response_attrs[aiter->second] = iter->second.c_str();
+      } else {
+        if (strncmp(name, RGW_ATTR_META_PREFIX, sizeof(RGW_ATTR_META_PREFIX)-1) == 0) {
+          name += sizeof(RGW_ATTR_PREFIX) - 1;
+          s->cio->print("%s: %s\r\n", name, iter->second.c_str());
+        }
+      }
+    }
+  }
+
+done:
+  set_req_state_err(s, (partial_content && !ret) ? STATUS_PARTIAL_CONTENT : ret);
+
+  dump_errno(s);
+
+  for (riter = response_attrs.begin(); riter != response_attrs.end(); ++riter) {
+    s->cio->print("%s: %s\n", riter->first.c_str(), riter->second.c_str());
+  }
+
+  if (!content_type)
+    content_type = "binary/octet-stream";
+  end_header(s, content_type);
+  sent_header = true;
+
+send_data:
+  if (get_data && !ret) {
+    int r = s->cio->write(bl.c_str() + bl_ofs, bl_len);
+    if (r < 0)
+      return r;
+  }
+
+  return 0;
+}
+
 int RGWGetObj::verify_permission()
 {
   obj.init(s->bucket, s->object_str);
@@ -320,9 +479,12 @@ int RGWGetObj::read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAc
   if (ret < 0)
     goto done_err;
 
-  if (!verify_object_permission(s, bucket_policy, &obj_policy, RGW_PERM_READ)) {
-    ret = -EPERM;
-    goto done_err;
+  // don't check read permissions if this is an Admin API call
+  if (!is_admin_op()) {
+    if (!verify_object_permission(s, bucket_policy, &obj_policy, RGW_PERM_READ)) {
+      ret = -EPERM;
+      goto done_err;
+    }
   }
 
   perfcounter->inc(l_rgw_get_b, cur_end - cur_ofs);

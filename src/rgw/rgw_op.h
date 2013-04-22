@@ -56,7 +56,7 @@ public:
   virtual const char *name() = 0;
 };
 
-class RGWGetObj : public RGWOp {
+class RGWGetObj : virtual public RGWOp {
 protected:
   const char *range_str;
   const char *if_mod;
@@ -76,6 +76,7 @@ protected:
   int ret;
   bool get_data;
   bool partial_content;
+  bool sent_header;
   rgw_obj obj;
   utime_t gc_invalidate_time;
 
@@ -98,15 +99,17 @@ public:
     unmod_ptr = NULL;
     get_data = false;
     partial_content = false;
+    sent_header = false;
     ret = 0;
  }
 
   virtual bool prefetch_data() { return true; }
 
+  virtual bool is_admin_op() { return false; }
   void set_get_data(bool get_data) {
     this->get_data = get_data;
   }
-  int verify_permission();
+  virtual int verify_permission();
   void execute();
   int read_user_manifest_part(rgw_bucket& bucket, RGWObjEnt& ent, RGWAccessControlPolicy *bucket_policy, off_t start_ofs, off_t end_ofs);
   int iterate_user_manifest_parts(rgw_bucket& bucket, string& obj_prefix, RGWAccessControlPolicy *bucket_policy,
@@ -117,6 +120,8 @@ public:
 
   virtual int get_params() = 0;
   virtual int send_response_data(bufferlist& bl, off_t ofs, off_t len) = 0;
+  int send_response_data_swift(bufferlist& bl, off_t bl_ofs, off_t bl_len);
+  int send_response_data_s3(bufferlist& bl, off_t bl_ofs, off_t bl_len);
 
   virtual const char *name() { return "get_obj"; }
 };
