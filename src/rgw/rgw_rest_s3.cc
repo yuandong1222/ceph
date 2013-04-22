@@ -1703,13 +1703,12 @@ int RGWHandler_ObjStore_S3::init(RGWRados *store, struct req_state *s, RGWClient
 }
 
 // subresources that we shouldn't include in the uri to sign
-static const char *nonsigned_subresources[] = {
+static const char *nonsigned_sub_resources[] = {
   "key",
   "subuser",
   "caps",
   "index",
   "object",
-  "policy",
   "log",
   "pool",
   "garbage",
@@ -1829,7 +1828,7 @@ static bool get_auth_header(struct req_state *s, string& dest, bool qsr)
   map<string, string> sub_resources = s->args.get_sub_resources();
   map<string, string>::iterator sres_iter;
 
-  for (const char **sres = nonsigned_subresources; *sres; ++sres) {
+  for (const char **sres = nonsigned_sub_resources; *sres; ++sres) {
     sres_iter = sub_resources.find(*sres);
     if (sres_iter != sub_resources.end()) {
       size_t pos = canon_resource.find(*sres) -1;
