@@ -471,7 +471,8 @@ int bucket_stats(rgw_bucket& bucket, Formatter *formatter)
     return r;
 
   map<RGWObjCategory, RGWBucketStats> stats;
-  int ret = store->get_bucket_stats(bucket, stats);
+  uint64_t bucket_ver, master_ver;
+  int ret = store->get_bucket_stats(bucket, &bucket_ver, &master_ver, stats);
   if (ret < 0) {
     cerr << "error getting bucket stats ret=" << ret << std::endl;
     return ret;

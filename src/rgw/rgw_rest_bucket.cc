@@ -66,7 +66,7 @@ void RGWOp_Get_Policy::execute()
   RESTArgs::get_string(s, "object", object, &object);
 
   op_state.set_bucket_name(bucket);
-  op_state.set_object(object);
+  op_state.set_object_name(object);
 
   http_ret = RGWBucketAdminOp::get_policy(store, op_state, flusher);
 }
@@ -220,10 +220,29 @@ void RGWOp_Object_Remove::execute()
   RESTArgs::get_string(s, "object", object, &object);
 
   op_state.set_bucket_name(bucket);
-  op_state.set_object(object);
+  op_state.set_object_name(object);
 
   http_ret = RGWBucketAdminOp::remove_object(store, op_state);
 }
+
+class RGWOp_Get_Object: public RGWGetObj, public RGWRESTOp {
+
+public:
+  RGWOp_Get_Object() {}
+
+  int check_caps(RGWUserCaps& caps) {
+    return caps.check_cap("buckets", RGW_CAP_READ);
+  }
+
+  int verify_permission() { return check_caps(s->user.caps); };
+  bool is_admin_op() { return true; };
+
+  int send_response_data(bufferlist bl, off_t bl_ofs, off_t bl_len) {
+    return send_response_data_s3(bl, bl_ofs, bl_len);
+  }
+
+  virtual const char *name() { return "get_object"; }
+};
 
 RGWOp *RGWHandler_Bucket::op_get()
 {

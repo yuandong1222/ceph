@@ -545,6 +545,120 @@ int RGWBucket::remove_object(RGWBucketAdminOpState& op_state, std::string *err_m
   return 0;
 }
 
+
+int RGWBucket::get_object_head(RGWBucketAdminOpState& op_state)
+{
+  int r;
+  std::string object_name = op_state.get_object_name();
+  const char *etag = op_state.get_etag();
+
+  rgw_bucket bucket = op_state.get_bucket();
+  rgw_obj object = op_state.get_object();
+
+  off_t ofs = op_state.get_read_offset();
+  off_t end = op_state.get_end_read_pos();
+
+  time_t lastmod;
+  const time_t *mod_ptr = NULL;
+  const time_t *unmod_ptr = NULL;
+
+  const char *if_match = NULL;
+  const char *if_nomatch = NULL;
+
+  uint64_t obj_size = 0;
+  uint64_t read_len = 0;
+
+  if (op_state.will_check_modified()) {
+    mod_ptr = op_state.get_check_time();
+  } else if (op_state.will_check_unmodified()) {
+    unmod_ptr = op_state.get_check_time();
+  }
+
+  if (op_state.etag_must_match()) {
+    if_match = etag;
+  } else if (op_state.etag_must_not_match()) {
+    if_nomatch = etag;
+  }
+
+  std::map<std::string, bufferlist> attrs = op_state.get_object_attrs();
+  std::map<std::string, bufferlist> ::iterator attr_iter;
+
+  bufferlist bl = op_state.get_object_bl();
+  void *handle = op_state.get_handle();
+
+  r = store->prepare_get_obj(store->ctx(), object, &ofs, &end, &attrs, mod_ptr,
+          unmod_ptr, &lastmod, if_match, if_nomatch, &read_len,
+          &obj_size, NULL, &handle, NULL);
+
+  if (r < 0) {
+    store->finish_get_obj(&handle);
+    return r;
+  }
+
+  op_state.set_obj_size(obj_size);
+  op_state.set_obj_read_len(read_len);
+  op_state.set_lastmod(lastmod);
+  op_state.set_read_offset(ofs);
+  op_state.set_end_read_pos(end);
+
+  if (!op_state.will_fetch_data())
+    store->finish_get_obj(&handle);
+
+  return 0;
+}
+
+class RGWBucketAdminObj_CB : public RGWGetDataCB
+{
+  RGWBucketAdminOpState& state;
+public:
+  RGWBucketAdminObj_CB(RGWBucketAdminOpState& op_state) : state(op_state) {};
+  virtual ~RGWBucketAdminObj_CB() {};
+
+  int handle_data(bufferlist& bl, off_t bl_ofs, off_t bl_len) {
+    std::pair<bufferlist, off_t> packet;
+    bufferlist packet_bl = packet.first;
+
+    packet_bl.append(bl.c_str() + bl_ofs, bl_len);
+    packet.second = bl_len;
+
+    state.append_object_data(packet);
+
+    return 0;
+  }
+};
+
+int RGWBucket::iterate_object(RGWBucketAdminOpState& op_state)
+{
+  int ret = get_object_head(op_state);
+  if (ret < 0)
+    return ret;
+
+  off_t ofs = op_state.get_read_offset();
+  off_t end = op_state.get_end_read_pos();
+
+  if (ofs > end)
+    return -EIO;
+
+  RGWBucketAdminObj_CB cb(op_state);
+
+  rgw_obj object = op_state.get_object();
+  void *handle = op_state.get_handle();
+
+  ret = store->get_obj_iterate(store->ctx(), &handle, object, ofs, end, &cb);
+
+  store->finish_get_obj(&handle);
+  return ret;
+}
+
+int RGWBucket::get_object(RGWBucketAdminOpState& op_state)
+{
+  int ret = get_object_head(op_state);
+  if (ret < 0)
+    return ret;
+
+  return iterate_object(op_state);
+}
+
 static void dump_bucket_index(map<string, RGWObjEnt> result,  Formatter *f)
 {
   map<string, RGWObjEnt>::iterator iter;
@@ -582,7 +696,6 @@ static void dump_index_check(map<RGWObjCategory, RGWBucketStats> existing_stats,
   dump_bucket_usage(calculated_stats, formatter);
   formatter->close_section();
   formatter->close_section();
-  formatter->flush(cout);
 }
 
 int RGWBucket::check_bad_index_multipart(RGWBucketAdminOpState& op_state,
@@ -884,6 +997,17 @@ int RGWBucketAdminOp::remove_object(RGWRados *store, RGWBucketAdminOpState& op_s
     return ret;
 
   return bucket.remove_object(op_state);
+}
+
+int RGWBucketAdminOp::get_object(RGWRados *store, RGWBucketAdminOpState& op_state)
+{
+  RGWBucket bucket;
+
+  int ret = bucket.init(store, op_state);
+  if (ret < 0)
+    return ret;
+
+  return ret = bucket.get_object(op_state);
 }
 
 static int bucket_stats(RGWRados *store, std::string&  bucket_name, Formatter *formatter)
