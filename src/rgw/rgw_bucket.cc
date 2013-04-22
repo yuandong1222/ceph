@@ -1077,16 +1077,23 @@ int RGWBucketAdminOp::info(RGWRados *store, RGWBucketAdminOpState& op_state,
   } else if (!bucket_name.empty()) {
     bucket_stats(store, bucket_name, formatter);
   } else {
-    RGWAccessHandle handle;
+    const string prefix = ".dir";
+    std::string domain_root = store->zone.domain_root.name;
+    std::list<std::string> buckets;
+    std::list<std::string>::iterator biter;
 
-    if (store->list_buckets_init(&handle) > 0) {
-      RGWObjEnt obj;
-      while (store->list_buckets_next(obj, &handle) >= 0) {
-	formatter->dump_string("bucket", obj.name);
-        if (show_stats)
-          bucket_stats(store, obj.name, formatter);
-      }
+    ret = store->list_raw_prefixed_objs(domain_root, prefix, buckets);
+    if (ret < 0)
+      return ret;
+
+    formatter->open_array_section("buckets");
+    for (biter = buckets.begin(); biter != buckets.end(); ++biter) {
+      formatter->dump_string("bucket", *biter);
+       if (show_stats)
+         bucket_stats(store, *biter, formatter);
     }
+
+    formatter->close_section();
   }
 
   flusher.flush();
