@@ -107,6 +107,7 @@ int main(int argc, char **argv) {
   string store_path, cmd, out_path, tfile;
   unsigned dstart = 0;
   unsigned dstop = ~0;
+  unsigned num_replays = 1;
   desc.add_options()
     ("help", "produce help message")
     ("mon-store-path", po::value<string>(&store_path),
@@ -121,6 +122,8 @@ int main(int argc, char **argv) {
      "transaction num to start dumping at")
     ("dump-end", po::value<unsigned>(&dstop),
      "transaction num to stop dumping at")
+    ("num-replays", po::value<unsigned>(&num_replays),
+     "number of times to replay")
     ("command", po::value<string>(&cmd),
      "command")
     ;
@@ -234,17 +237,21 @@ int main(int argc, char **argv) {
       std::cerr << desc << std::endl;
       goto done;
     }
-    TraceIter iter(tfile.c_str());
-    iter.init();
-    while (true) {
-      if (!iter.valid())
-	break;
-      if (iter.num() % 20 == 0)
-	std::cerr << "Replaying trans num " << iter.num() << std::endl;
-      st.apply_transaction(iter.cur());
-      iter.next();
+    unsigned num = 0;
+    for (unsigned i = 0; i < num_replays; ++i) {
+      TraceIter iter(tfile.c_str());
+      iter.init();
+      while (true) {
+	if (!iter.valid())
+	  break;
+	if (num % 20 == 0)
+	  std::cerr << "Replaying trans num " << num << std::endl;
+	st.apply_transaction(iter.cur());
+	iter.next();
+	++num
+      }
+      std::cerr << "Read up to transaction " << iter.num() << std::endl;
     }
-    std::cerr << "Read up to transaction " << iter.num() << std::endl;
   } else {
     std::cerr << "Unrecognized command: " << cmd << std::endl;
     goto done;
