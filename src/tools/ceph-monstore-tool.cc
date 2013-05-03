@@ -248,7 +248,7 @@ int main(int argc, char **argv) {
 	  std::cerr << "Replaying trans num " << num << std::endl;
 	st.apply_transaction(iter.cur());
 	iter.next();
-	++num
+	++num;
       }
       std::cerr << "Read up to transaction " << iter.num() << std::endl;
     }
