@@ -2422,7 +2422,9 @@ int OSDMonitor::prepare_new_pool(string& name, uint64_t auid, int crush_rule,
     pending_inc.new_pool_max = osdmap.pool_max;
   int64_t pool = ++pending_inc.new_pool_max;
   pending_inc.new_pools[pool].type = pg_pool_t::TYPE_REP;
-  pending_inc.new_pools[pool].flags = g_conf->osd_pool_default_flags;
+  pending_inc.new_pools[pool].flags = 0;
+  if (g_conf->osd_pool_default_hashpspool)
+    pending_inc.new_pools[pool].flags |= pg_pool_t::FLAG_HASHPSPOOL;
 
   pending_inc.new_pools[pool].size = g_conf->osd_pool_default_size;
   pending_inc.new_pools[pool].min_size = g_conf->get_osd_pool_default_min_size();

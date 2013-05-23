@@ -1715,7 +1715,8 @@ void OSDMap::build_simple(CephContext *cct, epoch_t e, uuid_d &fsid,
   for (map<int,const char*>::iterator p = rulesets.begin(); p != rulesets.end(); ++p) {
     int64_t pool = ++pool_max;
     pools[pool].type = pg_pool_t::TYPE_REP;
-    pools[pool].flags = cct->_conf->osd_pool_default_flags;
+    if (cct->_conf->osd_pool_default_hashpspool)
+      pools[pool].flags |= pg_pool_t::FLAG_HASHPSPOOL;
     pools[pool].size = cct->_conf->osd_pool_default_size;
     pools[pool].min_size = cct->_conf->get_osd_pool_default_min_size();
     pools[pool].crush_ruleset = p->first;
@@ -1840,7 +1841,8 @@ int OSDMap::build_simple_from_conf(CephContext *cct, epoch_t e, uuid_d &fsid,
   for (map<int,const char*>::iterator p = rulesets.begin(); p != rulesets.end(); ++p) {
     int64_t pool = ++pool_max;
     pools[pool].type = pg_pool_t::TYPE_REP;
-    pools[pool].flags = cct->_conf->osd_pool_default_flags;
+    if (cct->_conf->osd_pool_default_hashpspool)
+      pools[pool].flags |= pg_pool_t::FLAG_HASHPSPOOL;
     pools[pool].size = cct->_conf->osd_pool_default_size;
     pools[pool].min_size = cct->_conf->get_osd_pool_default_min_size();
     pools[pool].crush_ruleset = p->first;
