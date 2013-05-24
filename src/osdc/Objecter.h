@@ -1326,18 +1326,17 @@ private:
   tid_t read_full(const object_t& oid, const object_locator_t& oloc,
 		  snapid_t snap, bufferlist *pbl, int flags,
 		  Context *onfinish,
-	          eversion_t *objver = NULL, ObjectOperation *extra_ops = NULL) {
-    return read(oid, oloc, 0, 0, snap, pbl, flags | global_op_flags | CEPH_OSD_FLAG_READ, onfinish, objver);
+		  eversion_t *objver = NULL, ObjectOperation *extra_ops = NULL) {
+    return read(oid, oloc, 0, 0, snap, pbl, flags | CEPH_OSD_FLAG_READ, onfinish, objver);
   }
 
-     
   // writes
   tid_t _modify(const object_t& oid, const object_locator_t& oloc,
 		vector<OSDOp>& ops, utime_t mtime,
 		const SnapContext& snapc, int flags,
-	        Context *onack, Context *oncommit,
-	        eversion_t *objver = NULL) {
-    Op *o = new Op(oid, oloc, ops, flags | global_op_flags | CEPH_OSD_FLAG_WRITE, onack, oncommit, objver);
+		Context *onack, Context *oncommit,
+		eversion_t *objver = NULL) {
+    Op *o = new Op(oid, oloc, ops, flags | CEPH_OSD_FLAG_WRITE, onack, oncommit, objver);
     o->mtime = mtime;
     o->snapc = snapc;
     return op_submit(o);
