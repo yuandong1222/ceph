@@ -84,9 +84,10 @@ using namespace std;
 #undef dout_prefix
 #define dout_prefix *_dout << "client." << whoami << " "
 
+#define cldout(cl, v)  dout_impl((cl)->cct, dout_subsys, v) \
+  *_dout << "client." << cl->whoami << " "
+
 #define  tout(cct)       if (!cct->_conf->client_trace.empty()) traceout
-
-
 
 void client_flush_set_callback(void *p, ObjectCacher::ObjectSet *oset)
 {
@@ -197,8 +198,15 @@ Client::~Client()
 
   tear_down_cache();
 
-  delete objectcacher;
-  delete writeback_handler;
+  if (objectcacher) {
+    delete objectcacher;
+    objectcacher = 0;
+  }
+
+  if (writeback_handler) {
+    delete writeback_handler;
+    writeback_handler = NULL;
+  }
 
   delete filer;
   delete objecter;
