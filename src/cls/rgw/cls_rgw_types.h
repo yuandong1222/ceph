@@ -177,14 +177,14 @@ struct rgw_bucket_entry_ver {
 
   void encode(bufferlist &bl) const {
     ENCODE_START(1, 1, bl);
-    ::encode(pool, bl);
-    ::encode(epoch, bl);
+    ::encode_packed_val(pool, bl);
+    ::encode_packed_val(epoch, bl);
     ENCODE_FINISH(bl);
   }
   void decode(bufferlist::iterator &bl) {
     DECODE_START(1, bl);
-    ::decode(pool, bl);
-    ::decode(epoch, bl);
+    ::decode_packed_val(pool, bl);
+    ::decode_packed_val(epoch, bl);
     DECODE_FINISH(bl);
   }
   void dump(Formatter *f) const;
