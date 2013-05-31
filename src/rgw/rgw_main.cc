@@ -502,6 +502,8 @@ int main(int argc, const char **argv)
     /*Registering resource for /admin/metadata */
     admin_resource->register_resource("metadata", new RGWRESTMgr_Metadata);
     admin_resource->register_resource("log", new RGWRESTMgr_Log);
+    /*same resource handles /admin/mdlog */
+    admin_resource->register_resource("mdlog", new RGWRESTMgr_Log);
     rest.register_resource(g_conf->rgw_admin_entry, admin_resource);
   }
 
