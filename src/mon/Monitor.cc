@@ -1150,7 +1150,7 @@ void Monitor::sync_timeout(entity_inst_t &entity)
 	sync_provider->entity = monmap->get_inst(new_mon);
 	dout(10) << __func__ << " randomly choosing " << sync_provider->entity << " rank " << new_mon << dendl;
 	sync_state = SYNC_STATE_START;
-	sync_start_chunks(sync_provider);
+	sync_start_chunks();
 	return;
       }
     }
@@ -1161,7 +1161,7 @@ void Monitor::sync_timeout(entity_inst_t &entity)
       if (i != rank && i_inst != entity) {
 	sync_provider->entity = i_inst;
 	sync_state = SYNC_STATE_START;
-	sync_start_chunks(sync_provider);
+	sync_start_chunks();
 	return;
       }
     }
@@ -1462,24 +1462,26 @@ void Monitor::sync_start(entity_inst_t &other)
   assert(g_conf->mon_sync_requester_kill_at != 1);
 }
 
-void Monitor::sync_start_chunks(SyncEntity provider)
+void Monitor::sync_start_chunks()
 {
-  dout(10) << __func__ << " provider(" << provider->entity << ")" << dendl;
+  assert(sync_provider.get() != NULL);
+  dout(10) << __func__ << " provider(" << sync_provider->entity << ")"
+           << dendl;
 
   assert(sync_role == SYNC_ROLE_REQUESTER);
   assert(sync_state == SYNC_STATE_START);
 
   sync_state = SYNC_STATE_CHUNKS;
 
-  provider->set_timeout(new C_SyncTimeout(this, provider->entity),
+  sync_provider->set_timeout(new C_SyncTimeout(this, sync_provider->entity),
 			g_conf->mon_sync_timeout);
   MMonSync *msg = new MMonSync(MMonSync::OP_START_CHUNKS);
-  pair<string,string> last_key = provider->last_received_key;
+  pair<string,string> last_key = sync_provider->last_received_key;
   if (!last_key.first.empty() && !last_key.second.empty())
     msg->last_key = last_key;
 
   assert(g_conf->mon_sync_requester_kill_at != 4);
-  messenger->send_message(msg, provider->entity);
+  messenger->send_message(msg, sync_provider->entity);
   assert(g_conf->mon_sync_requester_kill_at != 5);
 }
 
@@ -1551,7 +1553,7 @@ void Monitor::handle_sync_start_reply(MMonSync *m)
   sync_send_heartbeat(sync_leader->entity);
   assert(g_conf->mon_sync_requester_kill_at != 3);
 
-  sync_start_chunks(sync_provider);
+  sync_start_chunks();
 out:
   m->put();
 }

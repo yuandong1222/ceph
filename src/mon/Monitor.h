@@ -973,7 +973,7 @@ private:
    *
    * @param provider The SyncEntity representing the Sync Provider.
    */
-  void sync_start_chunks(SyncEntity provider);
+  void sync_start_chunks();
   /**
    * Handle a MMonSync::OP_START_REPLY sent by the Sync Leader.
    *
