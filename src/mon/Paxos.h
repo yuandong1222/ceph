@@ -1157,8 +1157,9 @@ public:
    */
   void trim() {
     assert(should_trim());
-    version_t trim_to_version = MIN(get_version() - g_conf->paxos_max_join_drift,
-				    get_first_committed() + g_conf->paxos_trim_max);
+    version_t trim_to_version =
+      MIN(get_last_committed() - g_conf->paxos_max_join_drift,
+          get_first_committed() + g_conf->paxos_trim_max);
     trim_to(trim_to_version);
   }
   /**
@@ -1169,7 +1170,7 @@ public:
    */
   void trim_disable() {
     if (!trim_disabled_version)
-      trim_disabled_version = get_version();
+      trim_disabled_version = get_last_committed();
   }
   /**
    * Enable trimming
@@ -1190,7 +1191,7 @@ public:
    * @returns true if we should trim; false otherwise.
    */
   bool should_trim() {
-    int available_versions = (get_version() - get_first_committed());
+    int available_versions = (get_last_committed() - get_first_committed());
     int maximum_versions =
       (g_conf->paxos_max_join_drift + g_conf->paxos_trim_min);
 
@@ -1198,7 +1199,7 @@ public:
       return false;
 
     if (trim_disabled_version > 0) {
-      int disabled_versions = (get_version() - trim_disabled_version);
+      int disabled_versions = (get_last_committed() - trim_disabled_version);
       if (disabled_versions < g_conf->paxos_trim_disabled_max_versions)
 	return false;
     }
@@ -1211,17 +1212,17 @@ public:
    * @{
    */
   /**
-   * Get latest committed version
-   *
-   * @return latest committed version
-   */
-  version_t get_version() { return last_committed; }
-  /**
    * Get first committed version
    *
    * @return the first committed version
    */
   version_t get_first_committed() { return first_committed; }
+  /**
+   * Get last committed version
+   *
+   * @return last committed version
+   */
+  version_t get_last_committed() { return last_committed; }
   /**
    * Check if a given version is readable.
    *

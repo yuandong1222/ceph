@@ -1211,7 +1211,7 @@ void Monitor::handle_sync_start_chunks(MMonSync *m)
   }
 
   SyncEntity sync = get_sync_entity(other, this);
-  sync->version = paxos->get_version();
+  sync->version = paxos->get_last_committed();
 
   if (!m->last_key.first.empty() && !m->last_key.second.empty()) {
     sync->last_received_key = m->last_key;
@@ -1882,7 +1882,7 @@ void Monitor::handle_probe_probe(MMonProbe *m)
   r->quorum = quorum;
   monmap->encode(r->monmap_bl, m->get_connection()->get_features());
   r->paxos_first_version = paxos->get_first_committed();
-  r->paxos_last_version = paxos->get_version();
+  r->paxos_last_version = paxos->get_last_committed();
   messenger->send_message(r, m->get_connection());
 
   // did we discover a peer here?
@@ -1962,10 +1962,10 @@ void Monitor::handle_probe_reply(MMonProbe *m)
   if (m->quorum.size()) {
     dout(10) << " existing quorum " << m->quorum << dendl;
 
-    if (paxos->get_version() < m->paxos_first_version) {
+    if (paxos->get_last_committed() < m->paxos_first_version) {
       dout(10) << " peer paxos versions [" << m->paxos_first_version
                << "," << m->paxos_last_version << "]"
-	       << " vs my version " << paxos->get_version()
+	       << " vs my version " << paxos->get_last_committed()
 	       << " (too far ahead)"
 	       << dendl;
       sync_start(other);
@@ -1973,7 +1973,7 @@ void Monitor::handle_probe_reply(MMonProbe *m)
       return;
     }
     dout(10) << " peer paxos version " << m->paxos_last_version
-             << " vs my version " << paxos->get_version()
+             << " vs my version " << paxos->get_last_committed()
              << " (ok)"
              << dendl;
 
@@ -1996,9 +1996,9 @@ void Monitor::handle_probe_reply(MMonProbe *m)
       return;
     }
 
-    if (paxos->get_version() + g_conf->paxos_max_join_drift < m->paxos_last_version) {
+    if (paxos->get_last_committed() + g_conf->paxos_max_join_drift < m->paxos_last_version) {
       dout(10) << " peer paxos version " << m->paxos_last_version
-	       << " vs my version " << paxos->get_version()
+	       << " vs my version " << paxos->get_last_committed()
 	       << " (too far ahead)"
 	       << dendl;
       sync_start(other);
@@ -2170,7 +2170,7 @@ void Monitor::_sync_status(ostream& ss)
   JSONFormatter jf(true);
   jf.open_object_section("sync_status");
   jf.dump_string("state", get_state_name());
-  jf.dump_unsigned("paxos_version", paxos->get_version());
+  jf.dump_unsigned("paxos_version", paxos->get_last_committed());
 
   if (is_leader() || (sync_role == SYNC_ROLE_LEADER)) {
     Mutex::Locker l(trim_lock);
