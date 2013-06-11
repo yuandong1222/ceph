@@ -78,6 +78,7 @@ class MonitorDBStore
       OP_PUT	= 1,
       OP_ERASE	= 2,
       OP_COMPACT = 3,
+      OP_ERASE_PREFIX = 4,
     };
 
     void put(string prefix, string key, bufferlist& bl) {
@@ -104,6 +105,10 @@ class MonitorDBStore
       ostringstream os;
       os << ver;
       erase(prefix, os.str());
+    }
+
+    void erase_prefix(string prefix) {
+      ops.push_back(Op(OP_ERASE_PREFIX, prefix, string()));
     }
 
     void compact_prefix(string prefix) {
@@ -216,6 +221,9 @@ class MonitorDBStore
       case Transaction::OP_ERASE:
 	dbt->rmkey(op.prefix, op.key);
 	break;
+      case Transaction::OP_ERASE_PREFIX:
+        dbt->rmkeys_by_prefix(op.prefix);
+        break;
       case Transaction::OP_COMPACT:
 	compact.push_back(make_pair(op.prefix, make_pair(op.key, op.endkey)));
 	break;
