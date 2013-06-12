@@ -1330,9 +1330,7 @@ void Monitor::sync_requester_abort()
 
   // Given that we are explicitely aborting the whole sync process, we should
   // play it safe and clear the store.
-  set<string> targets = get_sync_targets_names();
-  targets.insert("mon_sync");
-  store->clear(targets);
+  sync_clear_store();
 
   dout(1) << __func__ << " no longer a sync requester" << dendl;
   sync_role = SYNC_ROLE_NONE;
