@@ -412,8 +412,11 @@ int Monitor::preinit()
   }
 
   {
-    // We have a potentially inconsistent store state in hands. Get rid of it
-    // and start fresh.
+    // Check if we have a potentially inconsistent store state.  If so, we
+    // must clear the store (except the control keys under 'mon_sync').
+    // Also, if 'force_sync' was set, then we must force the whole store to
+    // be cleared, but that includes all the 'mon_sync' control keys too.
+    bool force_sync = (store->get("mon_sync", "force_sync") > 0);
     bool clear_store = false;
     if (is_sync_on_going()) {
       dout(1) << __func__ << " clean up potentially inconsistent store state"
@@ -421,14 +424,13 @@ int Monitor::preinit()
       clear_store = true;
     }
 
-    if (store->get("mon_sync", "force_sync") > 0) {
+    if (force_sync) {
       dout(1) << __func__ << " force sync by clearing store state" << dendl;
       clear_store = true;
     }
 
     if (clear_store) {
-      set<string> sync_prefixes = get_sync_targets_names();
-      store->clear(sync_prefixes);
+      sync_clear_store();
 
       MonitorDBStore::Transaction t;
       t.erase("mon_sync", "in_sync");
