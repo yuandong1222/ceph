@@ -2043,14 +2043,27 @@ void Monitor::handle_probe_reply(MMonProbe *m)
   }
 
   entity_inst_t other = m->get_source_inst();
+  version_t paxos_version = paxos->get_last_committed();
+
+  // If there's an aborted sync, use the backed up paxos version to assess
+  // whether we should sync from a monitor; after all, we only want to sync
+  // from someone with a more recent state than the last we saw.
+  if (is_sync_on_going()) {
+    version_t sync_paxos_version = store->get("mon_sync", "paxos_lc");
+    dout(1) << __func__ << " using backed up sync version "
+            << sync_paxos_version << dendl;
+    if (sync_paxos_version > paxos_version)
+      paxos_version = sync_paxos_version;
+  }
+
   // is there an existing quorum?
   if (m->quorum.size()) {
     dout(10) << " existing quorum " << m->quorum << dendl;
 
-    if (paxos->get_last_committed() < m->paxos_first_version) {
+    if (paxos_version < m->paxos_first_version) {
       dout(10) << " peer paxos versions [" << m->paxos_first_version
                << "," << m->paxos_last_version << "]"
-	       << " vs my version " << paxos->get_last_committed()
+	       << " vs my version " << paxos_version
 	       << " (too far ahead)"
 	       << dendl;
       sync_start(other);
@@ -2058,7 +2071,7 @@ void Monitor::handle_probe_reply(MMonProbe *m)
       return;
     }
     dout(10) << " peer paxos version " << m->paxos_last_version
-             << " vs my version " << paxos->get_last_committed()
+             << " vs my version " << paxos_version
              << " (ok)"
              << dendl;
 
@@ -2081,9 +2094,9 @@ void Monitor::handle_probe_reply(MMonProbe *m)
       return;
     }
 
-    if (paxos->get_last_committed() + g_conf->paxos_max_join_drift < m->paxos_last_version) {
+    if (paxos_version + g_conf->paxos_max_join_drift < m->paxos_last_version) {
       dout(10) << " peer paxos version " << m->paxos_last_version
-	       << " vs my version " << paxos->get_last_committed()
+	       << " vs my version " << paxos_version
 	       << " (too far ahead)"
 	       << dendl;
       sync_start(other);
