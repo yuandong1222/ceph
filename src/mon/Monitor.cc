@@ -1397,9 +1397,19 @@ void Monitor::sync_clear_store()
 {
   dout(1) << __func__ << dendl;
 
+  MonitorDBStore::Transaction t;
   set<string> targets = get_sync_targets_names();
   assert(targets.count("mon_sync") == 0);
-  store->clear(targets);
+
+  for (set<string>::iterator it = targets.begin();
+       it != targets.end(); ++it) {
+    t.erase_prefix(*it);
+    if (g_conf->mon_compact_on_sync) {
+      t.compact_prefix(*it);
+    }
+  }
+
+  store->apply_transaction(t);
 }
 
 /**
