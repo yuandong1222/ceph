@@ -362,6 +362,8 @@ private:
     }
   };
 
+  void sync_clear_store();
+  void sync_obtain_latest_monmap(bufferlist &bl);
   void sync_store_init();
   void sync_store_cleanup();
   bool is_sync_on_going();

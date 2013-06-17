@@ -1341,32 +1341,121 @@ void Monitor::sync_requester_abort()
   bootstrap();
 }
 
-/**
- *
- */
-void Monitor::sync_store_init()
-{
-  MonitorDBStore::Transaction t;
-  t.put("mon_sync", "in_sync", 1);
 
-  bufferlist latest_monmap;
-  int err = monmon()->get_monmap(latest_monmap);
+void Monitor::sync_obtain_latest_monmap(bufferlist &bl)
+{
+  dout(1) << __func__ << dendl;
+
+  MonMap latest_monmap;
+
+  // Grab latest monmap from MonmapMonitor
+  bufferlist monmon_bl;
+  int err = monmon()->get_monmap(monmon_bl);
   if (err < 0) {
     if (err != -ENOENT) {
       derr << __func__
            << " something wrong happened while reading the store: "
            << cpp_strerror(err) << dendl;
       assert(0 == "error reading the store");
-      return; // this is moot
-    } else {
-      dout(10) << __func__ << " backup current monmap" << dendl;
-      monmap->encode(latest_monmap, CEPH_FEATURES_ALL);
     }
+  } else {
+    latest_monmap.decode(monmon_bl);
   }
 
-  t.put("mon_sync", "latest_monmap", latest_monmap);
+  // Grab last backed up monmap (if any) and compare epochs
+  if (store->exists("mon_sync", "latest_monmap")) {
+    bufferlist backup_bl;
+    int err = store->get("mon_sync", "latest_monmap", backup_bl);
+    if (err < 0) {
+      assert(err != -ENOENT);
+      derr << __func__
+           << " something wrong happened while reading the store: "
+           << cpp_strerror(err) << dendl;
+      assert(0 == "error reading the store");
+    }
+    assert(backup_bl.length() > 0);
 
+    MonMap backup_monmap;
+    backup_monmap.decode(backup_bl);
+
+    if (backup_monmap.epoch > latest_monmap.epoch)
+      latest_monmap = backup_monmap;
+  }
+
+  // Check if our current monmap's epoch is greater than the one we've
+  // got so far.
+  if (monmap->epoch > latest_monmap.epoch)
+    latest_monmap = *monmap;
+
+  assert(latest_monmap.epoch > 0);
+  dout(1) << __func__ << " obtained monmap e" << latest_monmap.epoch << dendl;
+
+  latest_monmap.encode(bl, CEPH_FEATURES_ALL);
+}
+
+void Monitor::sync_clear_store()
+{
+  dout(1) << __func__ << dendl;
+
+  set<string> targets = get_sync_targets_names();
+  assert(targets.count("mon_sync") == 0);
+  store->clear(targets);
+}
+
+/**
+ *
+ * Initiating a store for sync implies that we perform the following:
+ *
+ * 1. stash a back up version of the most recent monmap that can be one
+ *    of the following (highest version wins):
+ *      - whatever is returned from monmon()->getmap()
+ *      - whatever we have from a previous sync backup
+ *      - whatever is our current monmap
+ * 2. stash a back up version of paxos first and last committed from
+ *    either the store (from paxos itself), or from a previous sync
+ *    backup (highest version wins)
+ *
+ * 3. mark the store with an on-going sync:
+ *      - put (mon_sync,on-going) = 1
+ *      - put (mon_sync,latest_monmap) = backup monmap
+ *      - put (mon_sync,paxos_fc) = backup paxos first committed
+ *      - put (mon_sync,paxos_lc) = backup paxos last committed
+ *
+ * 4. clear all services keys
+ */
+void Monitor::sync_store_init()
+{
+  dout(1) << __func__ << dendl;
+
+  bufferlist backup_monmap;
+  sync_obtain_latest_monmap(backup_monmap);
+  assert(backup_monmap.length() > 0);
+
+  // If the store is marked as having an on-going sync, check if we
+  // have backed up a monmap and paxos's first and last committed
+  // versions -- we have to make the latter two optional as monitors
+  // prior to this patch with an aborted store won't have them.
+  version_t backup_paxos_fc = 0, backup_paxos_lc = 0;
+
+  if (is_sync_on_going()) {
+    dout(1) << __func__ << " store marked with on-going sync" << dendl;
+
+    backup_paxos_fc = store->get("mon_sync", "paxos_fc");
+    backup_paxos_lc = store->get("mon_sync", "paxos_lc");
+  } else {
+    backup_paxos_fc = paxos->get_first_committed();
+    backup_paxos_lc = paxos->get_last_committed();
+  }
+
+  MonitorDBStore::Transaction t;
+  t.put("mon_sync", "in_sync", 1);
+  t.put("mon_sync", "latest_monmap", backup_monmap);
+  t.put("mon_sync", "paxos_fc", backup_paxos_fc);
+  t.put("mon_sync", "paxos_lc", backup_paxos_lc);
   store->apply_transaction(t);
+
+  // clear store
+  sync_clear_store();
 }
 
 void Monitor::sync_store_cleanup()
@@ -1422,13 +1511,7 @@ void Monitor::sync_start(entity_inst_t &other)
   sync_role = SYNC_ROLE_REQUESTER;
   sync_state = SYNC_STATE_START;
 
-  // clear the underlying store, since we are starting a whole
-  // sync process from the bare beginning.
-  set<string> targets = get_sync_targets_names();
-  targets.insert("mon_sync");
-  store->clear(targets);
-
-
+  // init the store for the sync (see sync_store_init() for more info)
   sync_store_init();
 
   // assume 'other' as the leader. We will update the leader once we receive
