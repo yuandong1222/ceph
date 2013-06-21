@@ -32,6 +32,20 @@ deep_compare = False
 # generates an N character random string from letters and digits
 local_lock_id = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(16)) #32 digits for now
 
+def acquire_log_lock(conn, lock_id, shard_num):
+    (ret, out) = rgwadmin_rest(source_conn, ['log', 'lock'], 
+        {"type":"metadata", "id":shard_num, "length":log_lock_time, "lock_id":local_lock_id})
+
+    if debug_commands:
+        print 'acquire_log_lock returned: ', ret
+
+    if 200 != ret:
+        print 'acquire_log_lock failed, returned http code: ', ret
+
+    return ret
+
+    
+
 def add_user_to_remote(source_conn, dest_conn, uid):
 
     # working around botched account on my install
@@ -127,19 +141,11 @@ def check_individual_user(source_conn, dest_conn, uid, tag=None, manual_validati
 # metadata changes are grouped into shards based on [ uid | tag ] TODO, figure this out
 def process_source_shard(source_conn, dest_conn, shard_num, manual_validation=False):
 
-    if debug_commands:
-        print 'lock id:', local_lock_id 
-
     really_old_time = "2010-10-10 12:12:00"
     sync_start_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
     # first, lock the log
-    (ret, out) = rgwadmin_rest(source_conn, ['log', 'lock'], {"type":"metadata", "id":shard_num, "length":log_lock_time, "lock_id":local_lock_id})
-    if debug_commands:
-        print 'lock log returned: ', ret
-
-    if 200 != ret:
-        print 'lock log failed, returned http code: ', ret
+    acquire_log_lock(source_conn, local_lock_id, shard_num)
 
     (ret, out) = rgwadmin_rest(source_conn, ['log', 'list', 'id=' + str(shard_num)], 
       {"type":"metadata", "id":shard_num})

@@ -221,10 +221,12 @@ class REST_data_syncher:
     # get the updates for this bucket and sync the data across
     def sync_bucket(self, shard, bucket_name):
 
-        #dummy_marker = 'buck'
-        #dummy_marker = ''.join(random.choice(string.ascii_letters + string.digits) for x in range(16))
+        # There is not explicit bucket-index log. This is coverred
+        # this is coverred by the lock on the datalog for this shard
 
-        # first, get the bilog
+        # get the bilog for this bucket
+        # TODO: use the marker to apply updates when there are too many
+        # to return in one call
         (ret, out) = self.rest_factory.rest_call(self.source_conn, 
                                ['log', 'list', 'type=bucket-index'], 
                       #{"bucket":bucket_name, 'marker':dummy_marker }) 
@@ -246,6 +248,19 @@ class REST_data_syncher:
             if (event['state'] == 'complete'):
               print '   applying: ', event
 
+              # sync this operation from source to destination
+              (ret, out) = self.rest_factory.rest_call(self.source_conn, 
+                               ['bucket', 'object'], 
+                      #{"bucket":bucket_name, 'marker':dummy_marker }) 
+                              {"rgwx-source-zone":source_zone}) 
+
+              if 200 != ret:
+                  print 'copy of object ', event['object'], \
+                        ' failed, returned http code: ', ret
+              elif debug_commands:
+                  print 'copy of object ', event['object'], \
+                        ' returned http code: ', ret
+
 
     # data changes are grouped into buckets based on [ uid | tag ] TODO, figure this out
     def process_bucket(self, shard):
@@ -258,7 +273,7 @@ class REST_data_syncher:
         sync_start_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
         print 'acquiring data log lock'
-        # first, lock the log
+        # first, lock the data log
         self.acquire_log_lock(self.source_conn, self.local_lock_id, shard)
 
 
@@ -283,11 +298,14 @@ class REST_data_syncher:
 
         print 'updated log shard ', shard, ' has ', len(data_updates_list), ' entries'
         for entry in data_updates_list:
-            #print '   log entry:', entry
-            if buckets_to_sync.has_key(entry['key']):
-                pass
-            else:
-                buckets_to_sync[entry['key']] = ""
+            print '   log entry:', entry
+            # only track updates to buckets
+            if entry['entity_type'] == 'bucket':
+                if buckets_to_sync.has_key(entry['key']):
+                    pass
+                else:
+                    buckets_to_sync[entry['key']] = ""
+
 
         for entry in buckets_to_sync:
             print '   buckets to sync: ', entry

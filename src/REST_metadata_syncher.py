@@ -7,6 +7,7 @@ import random
 #import requests
 import string
 import sys
+import threading
 import time
 
 import boto.s3.acl
@@ -59,9 +60,6 @@ class REST_metadata_syncher:
 
         self.rest_factory = RGW_REST_factory()
 
-        if None == self.rest_factory:
-            print "RGW_REST_factory() is None. Whooops"
-
 
     # we explicitly specify the connection to use for the locking here  
     # in case we need to lock a non-master log file
@@ -77,14 +75,25 @@ class REST_metadata_syncher:
         return ret
 
 
+    # we explicitly specify the connection to use for the locking here  
+    # in case we need to lock a non-master log file
+    def release_log_lock(self, conn, lock_id, shard_num):
+        (ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'unlock'], {
+                                   "type":"metadata", "id":shard_num, 
+                                   "lock_id":lock_id})
+
+        if 200 != ret:
+            print 'metadata log unlock failed, returned http code: ', ret
+        elif debug_commands:
+            print 'metadata log unlock returned: ', ret
+
+    # copies the curret metadata for a user from the master side to the 
+    # non-master side
     def add_user_to_remote(self, uid):
 
-        # working around botched account on my install
-        if uid == 'inktank:greg':
-            return
-
         # get current info for this uid. 
-        (ret, src_acct) = self.rest_factory.rest_call(source_conn, ['metadata', 'userget'], {'key':uid})
+        (ret, src_acct) = self.rest_factory.rest_call(self.source_conn, 
+                                ['metadata', 'userget'], {'key':uid})
         if 200 != ret:
             print 'add_user_to_remote source side metadata user (GET) failed, code: ', ret
             return ret
@@ -98,7 +107,8 @@ class REST_metadata_syncher:
         # json encode the data
         outData = json.dumps(src_acct())
 
-        (ret, dest_acct) = self.rest_factory.rest_call(dest_conn, ['metadata', 'userput'], args, data=outData)
+        (ret, dest_acct) = self.rest_factory.rest_call(self.dest_conn, 
+                                ['metadata', 'userput'], args, data=outData)
         if 200 != ret:
             print 'metadata user (PUT) failed, return http code: ', ret
             print 'body: ', dest_acct()
@@ -113,69 +123,78 @@ class REST_metadata_syncher:
     def update_remote_user(self, uid):
         return self.add_user_to_remote(uid)
 
-    # only used for debugging at present
-    def manually_diff(self, source_data, dest_data):
-        diffkeys1 = [k for k in source_data if source_data[k] != dest_data[k]]
-        diffkeys2 = [k for k in dest_data if dest_data[k] != source_data[k] and not (k in source_data) ]
-
-        return diffkeys1 + diffkeys2
 
     # use the specified connection as it may be pulling metadata from any rgw
     def pull_metadata_for_uid(self, conn, uid):
         (retVal, out) = self.rest_factory.rest_call(conn, ['metadata', 'userget'], {"key":uid})
-        if 200 != retVal:
-            print 'metadata user(GET) failed for {uid} returned {val}'.format(uid=udi,val=ret)
+        if 200 != retVal and 404 != retVal:
+            print 'pull_metadata_for_uid() metadata user(GET) failed for {uid} returned {val}'.format(uid=uid,val=retVal)
             return retVal, None
         else:
             if debug_commands:
-                print 'pull_metadata_for_uid for {uid} returned: {val}'.format(uid=uid,val=ret)
+                print 'pull_metadata_for_uid for {uid} returned: {val}'.format(uid=uid,val=retVal)
 
             return retVal, out()
 
-    def manually_diff_individual_user(self, source_conn, dest_conn, uid):
-        print 'manually validating ', uid
+    # only used for debugging at present
+    def manually_diff(self, source_data, dest_data):
+        diffkeys1 = [k for k in source_data if source_data[k] != dest_data[k]]
+        diffkeys2 = [k for k in dest_data if dest_data[k] != source_data[k] and not (k in source_data) ]
+    
+        return diffkeys1 + diffkeys2
 
+    def manually_diff_individual_user(self, uid):
         retVal = 200 # default to success
+   
+        # get user metadata from the source side
+        (retVal, source_data) = self.pull_metadata_for_uid(self.source_conn, uid)
+        if 200 != retVal:
+            return retVal
+
+        # get the metadata for the same uid from the dest side
+        (retVal, dest_data) = self.pull_metadata_for_uid(self.dest_conn, uid)
+        if 200 != retVal:
+            return retVal
 
         diff_set = self.manually_diff(source_data, dest_data)
-
+   
         if 0 == len(diff_set):
             print 'deep comparison of uid ', uid, ' passed'
         else:
             for k in diff_set:
                 print k, ':', source_data[k], ' != ', dest_data[k]
                 retVal = 400 # throw an http-ish error code
-
+   
         return retVal
 
-    # for a given user, 
+    # for a given user, check to see 
     def check_individual_user(self, uid, tag=None):
         retVal = 200
 
-        # again, this is to work around a corrupted account in my install
-        if uid == "inktank:greg":
-            return retVal
-
-        retVal, source_data = self.pull_metadata_for_uid(source_conn, uid)
+        retVal, source_data = self.pull_metadata_for_uid(self.source_conn, uid)
         if 200 != retVal:
+            print 'pull from source failed'
             return retVal
 
-        # If the tag on the source_data does not match, skip this user.
-        # We assume this is caused by this entry being for a uid that 
-        # has been deleted.
+        # If the tag in the metadata log on the source_data does not match the current tag
+        # for the uid, skip this user.
+        # We assume this is caused by this entry being for a uid that has been deleted.
         if tag != None and tag != source_data['ver']['tag']:
             print 'log tag ', tag, ' != current uid tag ', source_data['ver']['tag'], \
                   '. Skipping this uid / tag pair (', uid, " / ", tag, ")"
             return retVal
 
-        retVal, dest_data = self.pull_metadata_for_uid(dest_conn, uid)
-        if 200 != retVal:
+        # if the user does not exist on the non-master side, then a 404 
+        # return value is appropriate
+        retVal, dest_data = self.pull_metadata_for_uid(self.dest_conn, uid)
+        if 200 != retVal and 404 != retVal:
+            print 'pull from dest failed'
             return retVal
 
         # if this user does not exist on the destination side, add it
         if (retVal == 404 and dest_data['Code'] == 'NoSuchKey'):
             print 'user: ', uid, ' missing from the remote side. Adding it'
-            retVal = self.add_user_to_remote(source_conn, dest_conn, uid)
+            retVal = self.add_user_to_remote(uid)
 
         else: # if the user exists on the remote side, ensure they're the same version
             dest_ver = dest_data['ver']['ver']
@@ -183,12 +202,12 @@ class REST_metadata_syncher:
 
             if dest_ver != source_ver:
                 print 'uid: ', uid, ' local_ver: ', source_ver, ' != dest_ver: ', dest_ver, ' UPDATING'
-                retVal = self.update_remote_user(source_conn, dest_conn, uid)
-
+                retVal = self.update_remote_user(self.source_conn, self.dest_conn, uid)
             elif debug_commands:
                 print 'uid: ', uid, ' local_ver: ', source_ver, ' == dest_ver: ', dest_ver 
 
         return retVal
+
 
     # metadata changes are grouped into shards based on [ uid | tag ] TODO, figure this out
     def process_shard(self, shard_num):
@@ -203,8 +222,9 @@ class REST_metadata_syncher:
         # first, lock the log
         self.acquire_log_lock(self.source_conn, self.local_lock_id, shard_num)
 
-        (ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'list', 'id=' + str(shard_num)], 
-                                   {"type":"metadata", "id":shard_num})
+        (ret, out) = self.rest_factory.rest_call(self.source_conn, 
+                               ['log', 'list', 'id=' + str(shard_num)], 
+                               {"type":"metadata", "id":shard_num})
 
         if 200 != ret:
             print 'metadata list failed, returned http code: ', ret
@@ -242,31 +262,43 @@ class REST_metadata_syncher:
                 perUserVersionDict[compKey] = ver
 
         # sync each uid / tag pair
+        # bail on any user where a non-200 status is returned
         for key in perUserVersionDict.keys():
             uid, tag = key.split('@')
             retVal = self.check_individual_user(uid, tag=tag)
+            if 200 != retVal:
+                print 'log trim returned http code ', retVal
+                # we hit an error processing a user. Bail and unlock the log
+                self.release_log_lock(self.source_conn, self.local_lock_id, shard_num)
+                return retVal
+            elif debug_commands:
+                print 'log trim returned http code ', retVal
 
         # trim the log for this shard now that all the users are synched
-        (ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'trim', 'id=' + str(shard_num)], 
+        # this should only occur if no users threw errors
+        (retVal, out) = self.rest_factory.rest_call(self.source_conn, 
+                      ['log', 'trim', 'id=' + str(shard_num)], 
                       {"id":shard_num, "type":"metadata", "start-time":really_old_time, 
                        "end-time":sync_start_time})
 
-        if 200 != ret:
-            print 'log trim returned http code ', ret
+        if 200 != retVal:
+            print 'log trim returned http code ', retVal
+            # we hit an error processing a user. Bail and unlock the log
+            self.release_log_lock(self.source_conn, self.local_lock_id, shard_num)
+            return retVal
         elif debug_commands:
-            print 'log trim returned http code ', ret
+            print 'log trim returned http code ', retVal
 
         # finally, unlock the log
-        (ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'unlock'], {
-                                   "type":"metadata", "id":shard_num, "lock_id":self.local_lock_id})
+        self.release_log_lock(self.source_conn, self.local_lock_id, shard_num)
 
-        if 200 != ret:
-            print 'metadata log unlock failed, returned http code: ', ret
-        elif debug_commands:
-            print 'metadata log unlock returned: ', ret
+        return ret
 
+        
+    # queries the number of metadata shards and then synches each shard, one at a time
     def sync_all_shards(self):
-        (ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'list', 'type=metadata'], {"type":"metadata"})
+        (ret, out) = self.rest_factory.rest_call(self.source_conn, 
+                            ['log', 'list', 'type=metadata'], {"type":"metadata"})
 
         if 200 != ret:
             print 'log list type:metadata failed, code: ', ret
@@ -278,8 +310,27 @@ class REST_metadata_syncher:
         print 'We have ', numObjects, ' master objects to check'
 
         for i in xrange(numObjects):
-            self.process_shard(i)
+            ret = self.process_shard(i)
+            if ret != 200:
+                print 'Error processing shard ', i
 
+    # synchs a single uid
     def sync_one_user(self, uid):
         retVal = self.check_individual_user(uid)
 
+    # acquires a list of all the uids on the source side and then, for each one
+    # compares the individual metadata entries between the source and destination RGWs.
+    # discrepencies are printed out
+    def manually_diff_all_users(self):
+        # get the source accounts
+        (ret, src_accts) = self.rest_factory.rest_call(self.source_conn, 
+                                ['metadata', 'userget'], {})
+        if 200 != ret:
+            print 'manually_diff_all_users() source side metadata user (GET) failed, code: ', ret
+            return ret
+        elif debug_commands:
+            print 'add_user_to_remote metadata userget() returned: ', ret
+
+        for uid in src_accts():
+            self.manually_diff_individual_user(uid)
+            
