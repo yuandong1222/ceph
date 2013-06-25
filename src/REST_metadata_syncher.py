@@ -24,6 +24,10 @@ debug_commands = False
 #deep_compare = True
 deep_compare = False
 
+class metadata_type:
+    USER = 1
+    BUCKET = 2
+
 class REST_metadata_syncher:
     logging.basicConfig(filename='boto_metadata_syncher.log', level=logging.DEBUG)
     log = logging.getLogger(__name__)
@@ -89,52 +93,89 @@ class REST_metadata_syncher:
 
     # copies the curret metadata for a user from the master side to the 
     # non-master side
-    def add_user_to_remote(self, uid):
+    def add_entry_to_remote(self, entry_name, md_type):
+        print 'in add_entry_to_remote'
 
-        # get current info for this uid. 
-        (ret, src_acct) = self.rest_factory.rest_call(self.source_conn, 
-                                ['metadata', 'userget'], {'key':uid})
-        if 200 != ret:
-            print 'add_user_to_remote source side metadata user (GET) failed, code: ', ret
-            return ret
+        # get current info for this entry 
+        if md_type == metadata_type.USER:
+            (retVal, src_acct) = self.rest_factory.rest_call(self.source_conn, 
+                                ['metadata', 'metaget', 'user'], {'key':entry_name})
+        elif md_type == metadata_type.BUCKET:
+            (retVal, src_acct) = self.rest_factory.rest_call(self.source_conn, 
+                                ['metadata', 'metaget', 'bucket'], {'key':entry_name})
+        else:
+            # invalid metadata type, return an http error code
+            print 'invalid metadata_type found in add_entry_to_remote(). value: ', md_type
+            return 404
+
+        if 200 != retVal:
+            print 'add_entry_to_remote source side metadata (GET) failed, code: ', retVal
+            return retVal
         elif debug_commands:
-            print 'add_user_to_remote metadata userget() returned: ', ret
+            print 'add_entry_to_remote metadata get() returned: ', retVal
 
-        # create an empty dict and pull out the user_id to use as an argument for next call
+        # create an empty dict and pull out the name to use as an argument for next call
         args = {}
-        args['key'] = src_acct()['data']['user_id']
+        if md_type == metadata_type.USER:
+            args['key'] = src_acct()['data']['user_id']
+        elif md_type == metadata_type.BUCKET:
+            args['key'] = src_acct()['data']['bucket_info']['bucket']['name']
+        else:
+            # invalid metadata type, return an http error code
+            print 'invalid metadata_type found in add_entry_to_remote(). value: ', md_type
+            return 404
 
         # json encode the data
         outData = json.dumps(src_acct())
 
-        (ret, dest_acct) = self.rest_factory.rest_call(self.dest_conn, 
-                                ['metadata', 'userput'], args, data=outData)
-        if 200 != ret:
-            print 'metadata user (PUT) failed, return http code: ', ret
+        if md_type == metadata_type.USER:
+            (retVal, dest_acct) = self.rest_factory.rest_call(self.dest_conn, 
+                                ['metadata', 'metaput', 'user'], args, data=outData)
+        elif md_type == metadata_type.BUCKET:
+            (retVal, dest_acct) = self.rest_factory.rest_call(self.dest_conn, 
+                                ['metadata', 'metaput', 'bucket'], args, data=outData)
+        else:
+            # invalid metadata type, return an http error code
+            print 'invalid metadata_type found in add_entry_to_remote(). value: ', md_type
+            return 404
+
+
+        if 200 != retVal:
+            print 'metadata user (PUT) failed, return http code: ', retVal
             print 'body: ', dest_acct()
-            return ret
+            return retVal
         elif debug_commands:
-            print 'add_user_to_remote metadata userput() returned: ', ret
+            print 'add_entry_to_remote metadata userput() returned: ', retVal
 
 
-        return ret
+        return retVal
 
-     # for now, just reuse the add_user code. May need to differentiate in the future
-    def update_remote_user(self, uid):
-        return self.add_user_to_remote(uid)
+     # for now, just reuse the add_entry code. May need to differentiate in the future
+    def update_remote_entry(self, entry, md_type):
+        return self.add_entry_to_remote(entry, md_type)
 
 
     # use the specified connection as it may be pulling metadata from any rgw
-    def pull_metadata_for_uid(self, conn, uid):
-        (retVal, out) = self.rest_factory.rest_call(conn, ['metadata', 'userget'], {"key":uid})
+    def pull_metadata_for_entry(self, conn, entry_name, md_type):
+        print 'in pull_metadata_for_entry'
+
+        if md_type == metadata_type.USER:
+            (retVal, out) = self.rest_factory.rest_call(conn, ['metadata', 'metaget', 'user'], {"key":entry_name})
+        elif md_type == metadata_type.BUCKET:
+            (retVal, out) = self.rest_factory.rest_call(conn, ['metadata', 'metaget', 'bucket'], {"key":entry_name})
+        else:
+            # invalid metadata type, return an http error code
+            print 'invalid metadata_type found in pull_metadata_for_entry(). value: ', md_type
+            return 404
+
         if 200 != retVal and 404 != retVal:
-            print 'pull_metadata_for_uid() metadata user(GET) failed for {uid} returned {val}'.format(uid=uid,val=retVal)
+            print 'pull_metadata_for_entry() metadata user(GET) failed for {entry} returned {val}'.format(entry=entry_name,val=retVal)
             return retVal, None
         else:
             if debug_commands:
-                print 'pull_metadata_for_uid for {uid} returned: {val}'.format(uid=uid,val=retVal)
+                print 'pull_metadata_for_entry for {entry} returned: {val}'.format(entry=entry_name,val=retVal)
 
-            return retVal, out()
+        return retVal, out()
 
     # only used for debugging at present
     def manually_diff(self, source_data, dest_data):
@@ -167,44 +208,98 @@ class REST_metadata_syncher:
    
         return retVal
 
-    # for a given user, check to see 
-    def check_individual_user(self, uid, tag=None):
+    # this is used to delete either a user or a bucket create/destroy, since
+    # both use the same APIs
+    def delete_meta_entry(self, entry_name, md_type, tag=None):
         retVal = 200
+        # bucket deletes aren't logging a tag at present, so I don't
+        # want to implement this until I can test it for both buckets and users
+        if True: 
+          return retVal
 
-        retVal, source_data = self.pull_metadata_for_uid(self.source_conn, uid)
+
+        retVal, source_data = self.pull_metadata_for_entry(self.source_conn, entry_name, md_type)
         if 200 != retVal:
-            print 'pull from source failed'
+            print 'pull from source failed for entry ', entry_name
             return retVal
 
         # If the tag in the metadata log on the source_data does not match the current tag
-        # for the uid, skip this user.
-        # We assume this is caused by this entry being for a uid that has been deleted.
+        # for the entry, skip this entry.
+        # We assume this is caused by this entry being for a entry that has been deleted.
         if tag != None and tag != source_data['ver']['tag']:
-            print 'log tag ', tag, ' != current uid tag ', source_data['ver']['tag'], \
-                  '. Skipping this uid / tag pair (', uid, " / ", tag, ")"
-            return retVal
+            print 'log tag ', tag, ' != current entry tag ', source_data['ver']['tag'], \
+                  '. Skipping this entry / tag pair (', entry_name, " / ", tag, ")"
+            #return retVal
+            return 200
 
         # if the user does not exist on the non-master side, then a 404 
         # return value is appropriate
-        retVal, dest_data = self.pull_metadata_for_uid(self.dest_conn, uid)
+        retVal, dest_data = self.pull_metadata_for_entry(self.dest_conn, entry_name, md_type)
         if 200 != retVal and 404 != retVal:
             print 'pull from dest failed'
             return retVal
 
         # if this user does not exist on the destination side, add it
         if (retVal == 404 and dest_data['Code'] == 'NoSuchKey'):
-            print 'user: ', uid, ' missing from the remote side. Adding it'
-            retVal = self.add_user_to_remote(uid)
+            print 'entry: ', entry_name, ' missing from the remote side. Adding it'
+            retVal = self.add_entry_to_remote(entry_name, md_type)
 
         else: # if the user exists on the remote side, ensure they're the same version
             dest_ver = dest_data['ver']['ver']
             source_ver = source_data['ver']['ver']
 
             if dest_ver != source_ver:
-                print 'uid: ', uid, ' local_ver: ', source_ver, ' != dest_ver: ', dest_ver, ' UPDATING'
-                retVal = self.update_remote_user(self.source_conn, self.dest_conn, uid)
+                print 'entry: ', entry_name, ' local_ver: ', source_ver, ' != dest_ver: ', dest_ver, ' UPDATING'
+                retVal = self.update_remote_entry(entry, md_type)
             elif debug_commands:
-                print 'uid: ', uid, ' local_ver: ', source_ver, ' == dest_ver: ', dest_ver 
+                print 'uid: ', entry, ' local_ver: ', source_ver, ' == dest_ver: ', dest_ver 
+
+        return retVal
+
+    # this is used to check either a user or a bucket create/destroy, since
+    # both use the same APIs
+    def check_meta_entry(self, entry_name, md_type, tag=None):
+        retVal = 200
+        print 'in check_meta_entry()'
+
+        retVal, source_data = self.pull_metadata_for_entry(self.source_conn, entry_name, md_type)
+        if 200 != retVal:
+            print 'pull from source failed for entry ', entry_name
+            return retVal
+        elif debug_commands:
+            print 'in check_meta_entry(), pull_metadata_for_entry() returned ', retVal, \
+                  ' for entry: ', entry_name
+
+        # If the tag in the metadata log on the source_data does not match the current tag
+        # for the entry, skip this entry.
+        # We assume this is caused by this entry being for a entry that has been deleted.
+        if tag != None and tag != source_data['ver']['tag']:
+            print 'log tag ', tag, ' != current entry tag ', source_data['ver']['tag'], \
+                  '. Skipping this entry / tag pair (', entry_name, " / ", tag, ")"
+            #return retVal
+            return 200
+
+        # if the user does not exist on the non-master side, then a 404 
+        # return value is appropriate
+        retVal, dest_data = self.pull_metadata_for_entry(self.dest_conn, entry_name, md_type)
+        if 200 != retVal and 404 != retVal:
+            print 'pull from dest failed for entry: ', entry_name
+            return retVal
+
+        # if this user does not exist on the destination side, add it
+        if (retVal == 404 and dest_data['Code'] == 'NoSuchKey'):
+            print 'entry: ', entry_name, ' missing from the remote side. Adding it'
+            retVal = self.add_entry_to_remote(entry_name, md_type)
+
+        else: # if the user exists on the remote side, ensure they're the same version
+            dest_ver = dest_data['ver']['ver']
+            source_ver = source_data['ver']['ver']
+
+            if dest_ver != source_ver:
+                print 'entry: ', entry_name, ' local_ver: ', source_ver, ' != dest_ver: ', dest_ver, ' UPDATING'
+                retVal = self.update_remote_entry(entry_name, md_type)
+            elif debug_commands:
+                print 'entry: ', entry_name, ' local_ver: ', source_ver, ' == dest_ver: ', dest_ver 
 
         return retVal
 
@@ -232,7 +327,7 @@ class REST_metadata_syncher:
             print 'metadata list returned: ', ret
 
         log_entry_list = out()
-        perUserVersionDict = {}
+        metadata_entries = {}
 
         print 'shard ', shard_num, ' has ', len(log_entry_list), ' entries'
         # sort the data by reverse status (so write comes prior to completed)
@@ -248,31 +343,59 @@ class REST_metadata_syncher:
         # uid / tag combo (unique instance of a given uid
         for entry in mySorted3:
             # use both the uid and tag as the key since a uid may have been deleted and re-created
+            section = entry['section'] # should be just 'user' or 'bucket'
             name = entry['name']
             tag = entry['data']['write_version']['tag']
             ver = entry['data']['write_version']['ver']
+            status = entry['data']['status']['status']
             compKey = name + "@" + tag
 
             # test if there is already an entry in the dictionary for the user
-            if (perUserVersionDict.has_key(compKey)): 
+            if (metadata_entries.has_key(compKey)): 
                 # if there is, then only add this one if the ver is higher
-                if (perUserVersionDict[compKey] < ver):
-                    perUserVersionDict[compKey] = ver
+                if (metadata_entries[compKey] < ver):
+                    metadata_entries[compKey] = section, ver, status
             else: # if not, just add this entry
-                perUserVersionDict[compKey] = ver
+                metadata_entries[compKey] = section, ver, status
 
-        # sync each uid / tag pair
+        # sync each entry / tag pair
         # bail on any user where a non-200 status is returned
-        for key in perUserVersionDict.keys():
-            uid, tag = key.split('@')
-            retVal = self.check_individual_user(uid, tag=tag)
+        for key,value in metadata_entries.iteritems():
+            name, tag = key.split('@')
+            section, ver, status = value
+            if status == 'remove':
+                if section == 'user':
+                    print 'removing user ', name
+                    retVal = self.delete_meta_entry(name, metadata_type.USER, tag=tag)
+                elif section == 'bucket':
+                    print 'removing bucket', name
+                    retVal = self.delete_meta_entry(name, metadata_type.BUCKET, tag=tag)
+                else:
+                    print 'found unknown metadata type: ', section, '. bailing'
+                    retVal = 500
+            elif status == 'write':
+                if section == 'user':
+                    print 'writing user ', name
+                    retVal = self.check_meta_entry(name, metadata_type.USER, tag=tag)
+                elif section == 'bucket':
+                    print 'writing bucket ', name
+                    retVal = self.check_meta_entry(name, metadata_type.BUCKET, tag=tag)
+                else:
+                    print 'found unknown metadata type: ', section, '. bailing'
+                    retVal = 500
+            else:
+                print 'doing something???? to ', name, ' section: ', status
+                retVal = 500
+
+
             if 200 != retVal:
-                print 'log trim returned http code ', retVal
+                print 'check_meta_entry() returned http code ', retVal, ' for', name
                 # we hit an error processing a user. Bail and unlock the log
                 self.release_log_lock(self.source_conn, self.local_lock_id, shard_num)
                 return retVal
             elif debug_commands:
-                print 'log trim returned http code ', retVal
+                print 'check_meta_entry() returned http code ', retVal, ' for', name
+
 
         # trim the log for this shard now that all the users are synched
         # this should only occur if no users threw errors
@@ -315,8 +438,8 @@ class REST_metadata_syncher:
                 print 'Error processing shard ', i
 
     # synchs a single uid
-    def sync_one_user(self, uid):
-        retVal = self.check_individual_user(uid)
+    def sync_one_entry(self, entry, md_type):
+        retVal = self.check_meta_entry(entry, md_type)
 
     # acquires a list of all the uids on the source side and then, for each one
     # compares the individual metadata entries between the source and destination RGWs.
@@ -329,7 +452,7 @@ class REST_metadata_syncher:
             print 'manually_diff_all_users() source side metadata user (GET) failed, code: ', ret
             return ret
         elif debug_commands:
-            print 'add_user_to_remote metadata userget() returned: ', ret
+            print 'add_entry_to_remote metadata userget() returned: ', ret
 
         for uid in src_accts():
             self.manually_diff_individual_user(uid)

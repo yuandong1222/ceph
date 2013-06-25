@@ -23,6 +23,7 @@ log_lock_time = 60 #seconds
 debug_commands = False
 #deep_compare = True
 deep_compare = False
+source_zone = 'rgw-n1-z1'
 
 class REST_data_syncher:
     logging.basicConfig(filename='boto_data_syncher.log', level=logging.DEBUG)
@@ -220,22 +221,22 @@ class REST_data_syncher:
 
     # get the updates for this bucket and sync the data across
     def sync_bucket(self, shard, bucket_name):
-
+        retVal = 200
         # There is not explicit bucket-index log. This is coverred
-        # this is coverred by the lock on the datalog for this shard
+        # by the lock on the datalog for this shard
 
         # get the bilog for this bucket
         # TODO: use the marker to apply updates when there are too many
         # to return in one call
-        (ret, out) = self.rest_factory.rest_call(self.source_conn, 
+        (retVal, out) = self.rest_factory.rest_call(self.source_conn, 
                                ['log', 'list', 'type=bucket-index'], 
                       #{"bucket":bucket_name, 'marker':dummy_marker }) 
                       {"bucket":bucket_name}) 
 
-        if 200 != ret:
-            print 'get bucket-index failed, returned http code: ', ret
+        if 200 != retVal:
+            print 'get bucket-index failed, returned http code: ', retVal
         elif debug_commands:
-            print 'get bucket-index returned: ', ret
+            print 'get bucket-index returned: ', retVal
 
         bucket_events = out()
 
@@ -245,26 +246,46 @@ class REST_data_syncher:
                           #reverse=True)
 
         for event in sorted_events:
-            if (event['state'] == 'complete'):
-              print '   applying: ', event
+            if event['state'] == 'complete':
+                print '   applying: ', event
 
-              # sync this operation from source to destination
-              (ret, out) = self.rest_factory.rest_call(self.source_conn, 
-                               ['bucket', 'object'], 
+                if event['op'] == 'write':
+                    print 'copying object ', bucket_name + '/' + event['object']
+                    # sync this operation from source to destination
+                    # issue this against the destination rgw, since the 
+                    # operation is implement as a 'pull' of the object 
+                    (retVal, out) = self.rest_factory.rest_call(self.dest_conn, 
+                               ['object', 'add', bucket_name + '/' + event['object']], 
                       #{"bucket":bucket_name, 'marker':dummy_marker }) 
-                              {"rgwx-source-zone":source_zone}) 
+                              {"rgwx-source-zone":source_zone, 
+                               "rgwx-client-id":'joe bucks awesome client',
+                               "rgwx-op-od":"42"}) 
+                elif event['op'] == 'del':
+                    print 'deleting object ', bucket_name + '/' + event['object']
+                    # delete this object from the destination
+                    (retVal, out) = self.rest_factory.rest_call(self.dest_conn, 
+                               ['object', 'rm', bucket_name + '/' + event['object']], )
+                      #{"bucket":bucket_name, 'marker':dummy_marker }) 
+                              #{"rgwx-source-zone":source_zone}) 
 
-              if 200 != ret:
-                  print 'copy of object ', event['object'], \
-                        ' failed, returned http code: ', ret
-              elif debug_commands:
-                  print 'copy of object ', event['object'], \
-                        ' returned http code: ', ret
+                else:
+                    print 'no idea what op this is: ', event['op']
+                    retVal = 500
 
+            if retVal < 200 or retVal > 299: # all 200 - 299 codes are success
+                print 'sync of object ', event['object'], \
+                      ' failed, returned http code: ', retVal, \
+                        '. Bailing'
+                return retVal
+            elif debug_commands:
+                print 'copy of object ', event['object'], \
+                        ' returned http code: ', retVal
+
+        return retVal
 
     # data changes are grouped into buckets based on [ uid | tag ] TODO, figure this out
     def process_bucket(self, shard):
-        print 'processing updated buckets list shard ', shard
+        #print 'processing updated buckets list shard ', shard
         # we need this due to a bug in rgw that isn't auto-filling in sensible defaults
         # when start-time is omitted
         really_old_time = "2010-10-10 12:12:00"
@@ -272,16 +293,11 @@ class REST_data_syncher:
         # NOTE rgw deals in UTC time. Make sure you adjust your calls accordingly
         sync_start_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
-        print 'acquiring data log lock'
+        #print 'acquiring data log lock'
         # first, lock the data log
         self.acquire_log_lock(self.source_conn, self.local_lock_id, shard)
 
 
-        #(ret, out) = self.rest_factory.rest_call(self.source_conn, 
-        #                       ['log', 'list', 'id=' + str(bucket_num)], 
-        #              {"id":bucket_num, "type":"data", 
-        #               "start-time":really_old_time, 
-        #               "end-time":sync_start_time})
         (ret, out) = self.rest_factory.rest_call(self.source_conn, 
                                ['log', 'list', 'id=' + str(shard)], 
                       {"id":shard, "type":"data"}) 
@@ -318,17 +334,17 @@ class REST_data_syncher:
         #print 'set the datalog work bound'
         #self.set_datalog_work_bound(bucket_num, sync_start_time)
 
-        # trim the log for this bucket now that all the users are synched
-        #(ret, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'trim', 'id=' + str(bucket_num)], 
-        #              {"id":bucket_num, "type":"data", "start-time":really_old_time, 
-        #               "end-time":sync_start_time})
+        # trim the log for this bucket now that its objects are synched
+        (retVal, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'trim', 'id=' + str(shard)], 
+                      {"id":shard, "type":"data", "start-time":really_old_time, 
+                       "end-time":sync_start_time})
 
-        #if 200 != ret:
-        #    print 'log trim returned http code ', ret
-        #elif debug_commands:
-        #    print 'log trim returned http code ', ret
+        if 200 != retVal:
+            print 'data log trim for shard ', shard, ' returned http code ', retVal
+        elif debug_commands:
+            print 'data log trim shard ',shard, ' returned http code ', retVal
 
-        print 'unlocking data log'
+        #print 'unlocking data log'
         # finally, unlock the log
         self.release_log_lock(self.source_conn, self.local_lock_id, shard)
 
@@ -350,23 +366,3 @@ class REST_data_syncher:
         for i in xrange(numObjects):
             self.process_bucket(i)
 
-    # synchs a single uid
-    def sync_one_user(self, uid):
-        retVal = self.check_individual_user(uid)
-
-    # acquires a list of all the uids on the source side and then, for each one
-    # compares the individual data entries between the source and destination RGWs.
-    # discrepencies are printed out
-    def manually_diff_all_users(self):
-        # get the source accounts
-        (ret, src_accts) = self.rest_factory.rest_call(self.source_conn, 
-                                ['data', 'userget'], {})
-        if 200 != ret:
-            print 'manually_diff_all_users() source side data user (GET) failed, code: ', ret
-            return ret
-        elif debug_commands:
-            print 'add_user_to_remote data userget() returned: ', ret
-
-        for uid in src_accts():
-            self.manually_diff_individual_user(uid)
-            
