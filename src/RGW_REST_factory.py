@@ -17,7 +17,7 @@ class RGW_REST_factory:
         self.log = logging.getLogger(__name__)
         self.put_cmds = ['create', 'link', 'add', 'metaput']
         self.post_cmds = ['unlink', 'modify', 'lock', 'unlock']
-        self.delete_cmds = ['trim', 'rm', 'process']
+        self.delete_cmds = ['trim', 'rm', 'process', 'delete']
         self.get_cmds = ['check', 'info', 'show', 'list', 'get', 'metaget']
 
         self.bucket_sub_resources = ['object', 'policy', 'index']
@@ -42,12 +42,16 @@ class RGW_REST_factory:
         if cmd[0] == 'bucket' or cmd[0] in self.bucket_sub_resources:
             if len(cmd) == 3 and cmd[0] == 'object':
                 return cmd[2], ''
+            elif len(cmd) == 3 and cmd[1] == 'delete': # for deleting a bucket
+                return cmd[2], ''
             elif cmd[0] == 'bucket':
                 return 'bucket', ''
             else:
                 return 'bucket', cmd[0]
         elif cmd[0] == 'user' or cmd[0] in self.user_sub_resources:
-            if cmd[0] == 'user':
+            if len(cmd) == 3 and cmd[0] == 'user': # used for deleteing users
+                return 'metadata/user', 'key=' + cmd[2]
+            elif cmd[0] == 'user':
                 return 'user', ''
             else:
                 return 'user', cmd[0]
@@ -81,52 +85,67 @@ class RGW_REST_factory:
     """
         Adapted from the build_request() method of boto.connection
     """
-    def build_admin_request(self, conn, cmd, method, resource = '', headers=None, data='',
+    def build_admin_request(self, conn, cmd, method, resource = '', headers=None, data=None,
             query_args=None, params=None):
 
-        if cmd[0] == 'object':
-            #print 'this is an object op, do not prepend admin'
-            path = conn.calling_format.build_path_base('', resource)
-            auth_path = conn.calling_format.build_auth_path('', resource)
-            host = conn.calling_format.build_host(conn.server_name(), '')
-        else:
-            #print 'not an object, go nuts'
-            path = conn.calling_format.build_path_base('admin', resource)
-            auth_path = conn.calling_format.build_auth_path('admin', resource)
-            host = conn.calling_format.build_host(conn.server_name(), 'admin')
+        #print 'not an object, go nuts'
+        path = conn.calling_format.build_path_base('admin', resource)
+        auth_path = conn.calling_format.build_auth_path('admin', resource)
+        host = conn.calling_format.build_host(conn.server_name(), 'admin')
+
         if query_args:
             path += '?' + query_args
             boto.log.debug('path=%s' % path)
             auth_path += '?' + query_args
             boto.log.debug('auth_path=%s' % auth_path)
 
-        #if debug_commands:
-        #    print 'debug print. path: ', path, ' params ', params, ' headers ', headers, ' data', data, ' host', host
+        retRequest = AWSAuthConnection.build_base_http_request(conn, method, path,
+                auth_path, params, headers, data, host)
+
+        return retRequest
+
+    def build_request(self, conn, cmd, method, resource = '', headers=None, data=None,
+            query_args=None, params=None):
+
+        path = conn.calling_format.build_path_base('', resource)
+        auth_path = conn.calling_format.build_auth_path('', resource)
+        host = conn.calling_format.build_host(conn.server_name(), '')
+
+        if query_args:
+            path += '?' + query_args
+            boto.log.debug('path=%s' % path)
+            auth_path += '?' + query_args
+            boto.log.debug('auth_path=%s' % auth_path)
 
         retRequest = AWSAuthConnection.build_base_http_request(conn, method, path,
                 auth_path, params, headers, data, host)
 
         return retRequest
 
-    def rest_call(self, connection, cmd, params=None, headers=None, raw=False, data=None):
+    def rest_call(self, connection, cmd, params=None, headers=None, raw=False, data='', admin=True):
         self.log.info('radosgw-admin-rest: %s %s' % (cmd, params))
 
         if headers is None:
           headers = {}
 
         headers['Content-Type'] = 'application/json; charset=UTF-8'
-        #headers['Content-Type'] = 'application/x-www-form-urlencoded'
-        #headers['HTTP_TRANSFER_ENCODING'] = 'chunked'
 
         method, handler = self.get_cmd_method_and_handler(cmd)
         resource, query_args = self.get_resource(cmd)
 
-        if data:
+        if admin:
           request = self.build_admin_request(connection, cmd, method, resource,
                     query_args=query_args, headers=headers, data=data, params=params)
         else:
-          request = self.build_admin_request(connection, cmd, method, resource,
-                    query_args=query_args, headers=headers)
+          request = self.build_request(connection, cmd, method, resource,
+                    query_args=query_args, headers=headers, data=data, params=params)
+
+        #if data:
+        #  request = self.build_admin_request(connection, cmd, method, resource,
+        #            query_args=query_args, headers=headers, data=data, params=params)
+        #else:
+        #  request = self.build_admin_request(connection, cmd, method, resource,
+        #            query_args=query_args, headers=headers)
 
         url = '{protocol}://{host}{path}'.format(protocol=request.protocol,
               host=request.host, path=request.path, params=params)
