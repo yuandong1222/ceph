@@ -223,7 +223,7 @@ void RGWAccessKey::decode_json(JSONObj *obj) {
   JSONDecoder::decode_json("secret_key", key, obj, true);
   if (!JSONDecoder::decode_json("subuser", subuser, obj)) {
     string user;
-    JSONDecoder::decode_json("user", user, obj, true);
+    JSONDecoder::decode_json("user", user, obj);
     int pos = user.find(':');
     if (pos >= 0) {
       subuser = user.substr(pos + 1);
@@ -642,16 +642,9 @@ void RGWRegionMap::dump(Formatter *f) const
   encode_json("master_region", master_region, f);
 }
 
-static void decode_regions(map<string, RGWRegion>& regions, JSONObj *o)
-{
-  RGWRegion r;
-  r.decode_json(o);
-  regions[r.name] = r;
-}
-
-
 void RGWRegionMap::decode_json(JSONObj *obj)
 {
-  JSONDecoder::decode_json("regions", regions, decode_regions, obj);
+  JSONDecoder::decode_json("regions", regions, obj);
+  JSONDecoder::decode_json("master_region", master_region, obj);
 }
 
