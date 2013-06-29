@@ -2100,13 +2100,11 @@ next:
     }
 
     RGWReplicaObjectLogger logger(store, pool_name, META_REPLICA_LOG_OBJ_PREFIX);
-    string pos_marker;
-    utime_t time_marker;
-    list<cls_replica_log_progress_marker> markers;
-    int ret = logger.get_bounds(shard_id, pos_marker, time_marker, markers);
+    RGWReplicaBounds bounds;
+    int ret = logger.get_bounds(shard_id, bounds);
     if (ret < 0)
       return -ret;
-    encode_json("markers", markers, formatter);
+    encode_json("bounds", bounds, formatter);
   }
 
   if (opt_cmd == OPT_REPLICAMDLOG_DELETE) {
@@ -2130,13 +2128,11 @@ next:
       return EINVAL;
     }
     RGWReplicaObjectLogger logger(store, pool_name, DATA_REPLICA_LOG_OBJ_PREFIX);
-    string pos_marker;
-    utime_t time_marker;
-    list<cls_replica_log_progress_marker> markers;
-    int ret = logger.get_bounds(shard_id, pos_marker, time_marker, markers);
+    RGWReplicaBounds bounds;
+    int ret = logger.get_bounds(shard_id, bounds);
     if (ret < 0)
       return -ret;
-    encode_json("markers", markers, formatter);
+    encode_json("bounds", bounds, formatter);
   }
 
   if (opt_cmd == OPT_REPLICADATALOG_DELETE) {
@@ -2166,13 +2162,11 @@ next:
     }
 
     RGWReplicaBucketLogger logger(store);
-    string pos_marker;
-    utime_t time_marker;
-    list<cls_replica_log_progress_marker> markers;
-    ret = logger.get_bounds(bucket, pos_marker, time_marker, markers);
+    RGWReplicaBounds bounds;
+    ret = logger.get_bounds(bucket, bounds);
     if (ret < 0)
       return -ret;
-    encode_json("markers", markers, formatter);
+    encode_json("bounds", bounds, formatter);
   }
 
   if (opt_cmd == OPT_REPLICABUCKETLOG_DELETE) {
