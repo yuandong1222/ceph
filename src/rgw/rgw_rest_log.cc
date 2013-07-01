@@ -25,14 +25,15 @@
 
 static int parse_date_str(string& in, utime_t& out) {
   uint64_t epoch = 0;
+  uint64_t nsec = 0;
 
   if (!in.empty()) {
-    if (parse_date(in, &epoch) < 0) {
+    if (parse_date(in, &epoch, &nsec) < 0) {
       dout(5) << "Error parsing date " << in << dendl;
       return -EINVAL;
     }
   }
-  out = utime_t(epoch, 0);
+  out = utime_t(epoch, nsec);
   return 0;
 }
 
@@ -127,6 +128,8 @@ void RGWOp_MDLog_GetShardsInfo::send_response() {
 void RGWOp_MDLog_Delete::execute() {
   string   st = s->info.args.get("start-time"),
            et = s->info.args.get("end-time"),
+           start_marker = s->info.args.get("start-marker"),
+           end_marker = s->info.args.get("end-marker"),
            shard = s->info.args.get("id"),
            err;
   utime_t  ut_st, 
@@ -141,7 +144,7 @@ void RGWOp_MDLog_Delete::execute() {
     http_ret = -EINVAL;
     return;
   }
-  if (st.empty() || et.empty()) {
+  if (et.empty() && end_marker.empty()) { /* bounding end */
     http_ret = -EINVAL;
     return;
   }
@@ -157,7 +160,7 @@ void RGWOp_MDLog_Delete::execute() {
   }
   RGWMetadataLog *meta_log = store->meta_mgr->get_log();
 
-  http_ret = meta_log->trim(shard_id, ut_st, ut_et);
+  http_ret = meta_log->trim(shard_id, ut_st, ut_et, start_marker, end_marker);
 }
 
 void RGWOp_MDLog_Lock::execute() {
@@ -327,9 +330,8 @@ void RGWOp_BILog_Delete::execute() {
 
   http_ret = 0;
   if ((bucket_name.empty() && bucket_instance.empty()) ||
-      start_marker.empty() ||
       end_marker.empty()) {
-    dout(5) << "ERROR: one of bucket and bucket instance, and also start-marker, end-marker are mandatory" << dendl;
+    dout(5) << "ERROR: one of bucket and bucket instance, and also end-marker is mandatory" << dendl;
     http_ret = -EINVAL;
     return;
   }
@@ -510,6 +512,8 @@ void RGWOp_DATALog_Unlock::execute() {
 void RGWOp_DATALog_Delete::execute() {
   string   st = s->info.args.get("start-time"),
            et = s->info.args.get("end-time"),
+           start_marker = s->info.args.get("start-marker"),
+           end_marker = s->info.args.get("end-marker"),
            shard = s->info.args.get("id"),
            err;
   utime_t  ut_st, 
@@ -524,7 +528,7 @@ void RGWOp_DATALog_Delete::execute() {
     http_ret = -EINVAL;
     return;
   }
-  if (st.empty() || et.empty()) {
+  if (et.empty() && end_marker.empty()) { /* bounding end */
     http_ret = -EINVAL;
     return;
   }
@@ -539,7 +543,7 @@ void RGWOp_DATALog_Delete::execute() {
     return;
   }
 
-  http_ret = store->data_log->trim_entries(shard_id, ut_st, ut_et);
+  http_ret = store->data_log->trim_entries(shard_id, ut_st, ut_et, start_marker, end_marker);
 }
 
 RGWOp *RGWHandler_Log::op_get() {

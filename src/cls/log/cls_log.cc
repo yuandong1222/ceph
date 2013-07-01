@@ -80,6 +80,8 @@ static int cls_log_add(cls_method_context_t hctx, bufferlist *in, bufferlist *ou
 
     CLS_LOG(0, "storing entry at %s", index.c_str());
 
+    entry.id = index;
+
     int ret = write_log_entry(hctx, index, entry);
     if (ret < 0)
       return ret;
@@ -182,8 +184,16 @@ static int cls_log_trim(cls_method_context_t hctx, bufferlist *in, bufferlist *o
   string from_index;
   string to_index;
 
-  get_index_time_prefix(op.from_time, from_index);
-  get_index_time_prefix(op.to_time, to_index);
+  if (op.from_marker.empty()) {
+    get_index_time_prefix(op.from_time, from_index);
+  } else {
+    from_index = op.from_marker;
+  }
+  if (op.to_marker.empty()) {
+    get_index_time_prefix(op.to_time, to_index);
+  } else {
+    to_index = op.to_marker;
+  }
 
 #define MAX_TRIM_ENTRIES 1000
   size_t max_entries = MAX_TRIM_ENTRIES;
@@ -201,7 +211,7 @@ static int cls_log_trim(cls_method_context_t hctx, bufferlist *in, bufferlist *o
 
     CLS_LOG(20, "index=%s to_index=%s", index.c_str(), to_index.c_str());
 
-    if (index.compare(0, to_index.size(), to_index) >= 0)
+    if (index.compare(0, to_index.size(), to_index) > 0)
       break;
 
     CLS_LOG(20, "removing key: index=%s", index.c_str());

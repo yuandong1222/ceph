@@ -649,7 +649,7 @@ struct RGWBucketInfo
      ::encode(owner, bl);
      ::encode(flags, bl);
      ::encode(region, bl);
-     ::encode(creation_time, bl);
+     ::encode((uint64_t)creation_time, bl);
      ::encode(placement_rule, bl);
      ::encode(has_instance_obj, bl);
      ENCODE_FINISH(bl);
@@ -664,7 +664,7 @@ struct RGWBucketInfo
      if (struct_v >= 5)
        ::decode(region, bl);
      if (struct_v >= 6)
-       ::decode(creation_time, bl);
+       ::decode((uint64_t&)creation_time, bl);
      if (struct_v >= 7)
        ::decode(placement_rule, bl);
      if (struct_v >= 8)
@@ -1200,7 +1200,7 @@ extern int parse_key_value(string& in_str, const char *delim, string& key, strin
 extern int parse_time(const char *time_str, time_t *time);
 extern bool parse_rfc2616(const char *s, struct tm *t);
 extern bool parse_iso8601(const char *s, struct tm *t);
-extern int parse_date(const string& date, uint64_t *epoch, string *out_date = NULL, string *out_time = NULL);
+extern int parse_date(const string& date, uint64_t *epoch, uint64_t *nsec, string *out_date = NULL, string *out_time = NULL);
 extern string rgw_trim_whitespace(const string& src);
 extern string rgw_trim_quotes(const string& val);
 

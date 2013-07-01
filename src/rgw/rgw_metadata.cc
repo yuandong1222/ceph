@@ -127,14 +127,15 @@ int RGWMetadataLog::list_entries(void *handle,
   return 0;
 }
 
-int RGWMetadataLog::trim(int shard_id, utime_t& from_time, utime_t& end_time)
+int RGWMetadataLog::trim(int shard_id, const utime_t& from_time, const utime_t& end_time,
+                         const string& start_marker, const string& end_marker)
 {
   string oid;
   get_shard_oid(shard_id, oid);
 
   int ret;
 
-  ret = store->time_log_trim(oid, from_time, end_time);
+  ret = store->time_log_trim(oid, from_time, end_time, start_marker, end_marker);
 
   if (ret == -ENOENT)
     ret = 0;
@@ -451,6 +452,7 @@ void RGWMetadataManager::list_keys_complete(void *handle)
 void RGWMetadataManager::dump_log_entry(cls_log_entry& entry, Formatter *f)
 {
   f->open_object_section("entry");
+  f->dump_string("id", entry.id);
   f->dump_string("section", entry.section);
   f->dump_string("name", entry.name);
   entry.timestamp.gmtime(f->dump_stream("timestamp"));
