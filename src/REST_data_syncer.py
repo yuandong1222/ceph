@@ -213,58 +213,7 @@ class REST_data_syncer_worker(multiprocessing.Process):
         return retVal
 
 
-    # use the specified connection as it may be pulling data from any rgw
-    def pull_data_for_uid(self, conn, uid):
-        (retVal, out) = self.rest_factory.rest_call(conn, ['data', 'userget'], {"key":uid})
-        if 200 != retVal and 404 != retVal:
-            print 'data user(GET) failed for {uid} returned {val}'.format(uid=uid,val=retVal)
-            return retVal, None
-        else:
-            if debug_commands:
-                print 'pull_data_for_uid for {uid} returned: {val}'.format(uid=uid,val=retVal)
-
-            return retVal, out()
-
-    # for a given user, check to see 
-    def check_individual_user(self, uid, tag=None):
-        retVal = 200
-
-        retVal, source_data = self.pull_data_for_uid(self.source_conn, uid)
-        if 200 != retVal:
-            return retVal
-
-        # If the tag in the data log on the source_data does not match the current tag
-        # for the uid, skip this user.
-        # We assume this is caused by this entry being for a uid that has been deleted.
-        if tag != None and tag != source_data['ver']['tag']:
-            print 'log tag ', tag, ' != current uid tag ', source_data['ver']['tag'], \
-                  '. Skipping this uid / tag pair (', uid, " / ", tag, ")"
-            return retVal
-
-        # if the user does not exist on the non-master side, then a 404 
-        # return value is appropriate
-        retVal, dest_data = self.pull_data_for_uid(self.dest_conn, uid)
-        if 200 != retVal and 404 != retVal:
-            return retVal
-
-        # if this user does not exist on the destination side, add it
-        if (retVal == 404 and dest_data['Code'] == 'NoSuchKey'):
-            print 'user: ', uid, ' missing from the remote side. Adding it'
-            retVal = self.add_user_to_remote(uid)
-
-        else: # if the user exists on the remote side, ensure they're the same version
-            dest_ver = dest_data['ver']['ver']
-            source_ver = source_data['ver']['ver']
-
-            if dest_ver != source_ver:
-                print 'uid: ', uid, ' local_ver: ', source_ver, ' != dest_ver: ', dest_ver, ' UPDATING'
-                retVal = self.update_remote_user(self.source_conn, self.dest_conn, uid)
-            elif debug_commands:
-                print 'uid: ', uid, ' local_ver: ', source_ver, ' == dest_ver: ', dest_ver 
-
-        return retVal
-
-
+    # TODO actually use the markers
     def set_datalog_work_bound(self, bucket_num, time_to_use):
         (ret, out) = self.rest_factory.rest_call(self.source_conn, 
                                ['replica_log', 'set', 'work_bound'], 
@@ -278,20 +227,52 @@ class REST_data_syncer_worker(multiprocessing.Process):
     # get the updates for this bucket and sync the data across
     def sync_bucket(self, shard, bucket_name):
         retVal = 200
-        # There is not explicit bucket-index log. This is coverred
+        # There is not an explicit bucket-index log lock. This is coverred
         # by the lock on the datalog for this shard
 
+        just_the_bucket = bucket_name.split(':')[0]
+        print 'just the bucket: ', just_the_bucket
         # get the bilog for this bucket
         (retVal, out) = self.rest_factory.rest_call(self.source_conn, 
-                               ['log', 'list', 'type=bucket-index'], 
-                      #{"bucket":bucket_name, 'marker':dummy_marker }) 
-                      {"bucket":bucket_name}) 
+                           ['log', 'list', 'type=bucket-index'], 
+                          #{"bucket":bucket_name, 'marker':dummy_marker }) 
+                          {"bucket":bucket_name, 'bucket-instance':bucket_name}) 
+                          #{"rgwx-bucket-instance":bucket_name}) 
+                          #{"bucket":just_the_bucket}) 
+
+        if 200 != retVal:
+            print 'get bucket-index for bucket ', bucket_name, \
+                  ' failed, returned http code: ', retVal
+            return retVal
+        elif debug_commands:
+            print 'get bucket-index for bucket ', bucket_name, \
+                  ' returned http code: ', retVal
+
+        bucket_events = out()
+  
+        print 'bilog for bucket ', bucket_name, ' has ', \
+              len(bucket_events), ' entries'
 
         # first, make sure the events are sorted in index_ver order 
         sorted_events = sorted(bucket_events, key=lambda entry: entry['index_ver']) 
                           #reverse=True)
 
         for event in sorted_events:
+            #make sure we still have the lock
+            if self.relock_log:
+                retVal = self.acquire_log_lock(self.source_conn, \
+                                           self.local_lock_id, \
+                                           self.source_zone, data_log_shard)
+                if 200 != retVal:
+                    print 'error acquiring lock for bucket ', bucket, \
+                          ' lock_id: ', self.local_lock_id, \
+                          ' in zone ', self.source_zone, \
+                          ' in process_entries_for_data_log_shard(). ' \
+                          ' Returned http code ', retVal
+                    # log unlocking and adding the return value to the result queue
+                    # will be handled by the calling function
+                    return retVal
+
             if event['state'] == 'complete':
                 print '   applying: ', event
 
@@ -299,11 +280,13 @@ class REST_data_syncer_worker(multiprocessing.Process):
                     print 'copying object ', bucket_name + '/' + event['object']
                     # sync this operation from source to destination
                     # issue this against the destination rgw, since the 
-                    # operation is implement as a 'pull' of the object 
+                    # operation is implemented as a 'pull' of the object 
+                    #
+                    # TODO put real values in for rgwx-client-id and rgwx-op-od
                     (retVal, out) = self.rest_factory.rest_call(self.dest_conn, 
                                ['object', 'add', bucket_name + '/' + event['object']], 
                       #{"bucket":bucket_name, 'marker':dummy_marker }) 
-                              {"rgwx-source-zone":source_zone, 
+                              {"rgwx-source-zone":self.source_zone, 
                                "rgwx-client-id":'joe bucks awesome client',
                                "rgwx-op-od":"42"}) 
                 elif event['op'] == 'del':
@@ -328,23 +311,6 @@ class REST_data_syncer_worker(multiprocessing.Process):
                         ' returned http code: ', retVal
 
         return retVal
-
-    # not used
-    # data changes are grouped into buckets based on [ uid | tag ] 
-    def process_bucket(self, bucket_num):
-
-        # trim the log for this bucket now that its objects are synced
-        (retVal, out) = self.rest_factory.rest_call(self.source_conn, ['log', 'trim', 'id=' + str(shard)], 
-                      {"id":shard, "type":"data", "start-time":really_old_time, 
-                       "end-time":sync_start_time})
-
-        if 200 != retVal:
-            print 'data log trim for shard ', shard, ' returned http code ', retVal
-        elif debug_commands:
-            print 'data log trim shard ',shard, ' returned http code ', retVal
-
-        # finally, unlock the log
-        self.release_log_lock(self.source_conn, self.local_lock_id, shard)
 
     # sort by timestamp and then by name
     def sort_and_filter_entries(self, to_sort):
@@ -378,6 +344,14 @@ class REST_data_syncer_worker(multiprocessing.Process):
                      
         retVal = 200
 
+        # we need this due to a bug in rgw that isn't auto-filling in sensible 
+        # defaults when start-time is omitted
+        really_old_time = "2010-10-10 12:12:00"
+  
+        # NOTE rgw deals in UTC time. Make sure you adjust 
+        # your calls accordingly
+        sync_start_time = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
         # sync each entry / tag pair
         # bail on any user where a non-200 status is returned
         for bucket_name in entries:
@@ -395,30 +369,42 @@ class REST_data_syncer_worker(multiprocessing.Process):
                     # will be handled by the calling function
                     return retVal
   
-            just_the_bucket = bucket_name.split(':')[0]
-            print 'just the bucket: ', just_the_bucket
-            # get the bilog for this bucket
-            (retVal, out) = self.rest_factory.rest_call(self.source_conn, 
-                               ['log', 'list', 'type=bucket-index'], 
-                              #{"bucket":bucket_name, 'marker':dummy_marker }) 
-                              #{"bucket":bucket_name}) 
-                              {"rgwx-bucket-instance":bucket_name}) 
-                              #{"bucket":just_the_bucket}) 
 
-            if 200 != retVal:
-                print 'get bucket-index for bucket ', bucket_name, \
-                      ' failed, returned http code: ', retVal
-            elif debug_commands:
-                print 'get bucket-index for bucket ', bucket_name, \
-                      ' returned http code: ', retVal
+                retVal = self.sync_bucket(data_log_shard, bucket_name)
 
-            bucket_events = out()
-  
-            print 'bilog for bucket ', bucket_name, ' has ', \
-                  len(bucket_events), ' entries'
+                if 200 != retVal:
+                    print 'sync_bucket() failed for bucket ', bucket_name, \
+                          ', returned http code: ', retVal
 
-            for entry in bucket_events:
-                print entry
+                    # if there is an error, release the log lock and bail
+                    retVal = self.release_log_lock(self.source_conn, \
+                                              self.local_lock_id, \
+                                              self.source_zone, data_log_shard)
+                    return retVal
+                elif debug_commands:
+                    print 'sync_bucket() for bucket ', bucket_name, \
+                          ' returned http code: ', retVal
+
+        # TODO trim the log and then unlock it
+        # trim the log for this bucket now that its objects are synced
+        (retVal, out) = self.rest_factory.rest_call(self.source_conn, 
+                  ['log', 'trim', 'id=' + str(data_log_shard)], 
+                  {"id":data_log_shard, "type":"data", "start-time":really_old_time, 
+                   "end-time":sync_start_time})
+
+        if 200 != retVal:
+            print 'data log trim for shard ', shard, ' returned http code ', retVal
+            # normally we would unlock and return a avlue here, 
+            # but since that's going to happen next, we effectively just fall through
+            # into it
+
+        elif debug_commands:
+            print 'data log trim shard ',shard, ' returned http code ', retVal
+
+        retVal = self.release_log_lock(self.source_conn, \
+                                       self.local_lock_id, \
+                                       self.source_zone, data_log_shard)
+        return retVal
 
 
     def run(self):
@@ -439,14 +425,6 @@ class REST_data_syncer_worker(multiprocessing.Process):
                 print data_log_shard, ' is being processed by process ', \
                       self.processName
 
-            # we need this due to a bug in rgw that isn't auto-filling in sensible 
-            # defaults when start-time is omitted
-            really_old_time = "2010-10-10 12:12:00"
-  
-            # NOTE rgw deals in UTC time. Make sure you adjust 
-            # your calls accordingly
-            sync_start_time = \
-                datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
 
             # first, lock the data log
             retVal = self.acquire_log_lock(self.source_conn, \
