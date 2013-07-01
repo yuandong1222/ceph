@@ -5,6 +5,7 @@
 
 #include "common/ceph_json.h"
 #include "include/utime.h"
+#include "rgw/rgw_common.h"
 
 // for testing DELETE ME
 #include <fstream>
@@ -437,6 +438,18 @@ void decode_json_obj(bufferlist& val, JSONObj *obj)
     val.decode_base64(bl);
   } catch (buffer::error& err) {
    throw JSONDecoder::err("failed to decode base64");
+  }
+}
+
+void decode_json_obj(utime_t& val, JSONObj *obj)
+{
+  string s = obj->get_data();
+  uint64_t epoch;
+  int r = utime_t::parse_date(s, &epoch);
+  if (r == 0) {
+    val.set_from_double(epoch);
+  } else {
+    throw JSONDecoder::err("failed to decode utime_t");
   }
 }
 
