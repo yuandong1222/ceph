@@ -39,7 +39,7 @@ ceph_sbin_SCRIPTS = \
 sbin_SCRIPTS = \
 	mount.fuse.ceph
 
-bin_SCRIPTS = ceph ceph-run $(srcdir)/ceph-clsinfo ceph-debugpack ceph-rbdnamer
+bin_SCRIPTS = ceph ceph-run ceph-rest-api ceph-clsinfo ceph-debugpack ceph-rbdnamer
 dist_bin_SCRIPTS =
 # C/C++ tests to build will be appended to this
 check_PROGRAMS =
@@ -1246,6 +1246,7 @@ EXTRA_DIST += \
 	ceph-disk-activate \
 	ceph-disk-udev \
 	ceph-create-keys \
+	ceph-rest-api \
 	mount.fuse.ceph
 
 
