@@ -75,18 +75,18 @@ struct OSDCapMatch {
   // auid and pool_name/nspace are mutually exclusive
   int64_t auid;
   std::string pool_name;
-  bool any_nspace;
+  bool is_nspace;      // true if nspace is defined; false if not constrained.
   std::string nspace;
 
   std::string object_prefix;
 
-  OSDCapMatch() : auid(CEPH_AUTH_UID_DEFAULT), any_nspace(true) {}
+  OSDCapMatch() : auid(CEPH_AUTH_UID_DEFAULT), is_nspace(false) {}
   OSDCapMatch(std::string pl, std::string pre) :
-	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), any_nspace(true), object_prefix(pre) { }
+	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), is_nspace(false), object_prefix(pre) { }
   OSDCapMatch(std::string pl, std::string ns, std::string pre) :
-	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), any_nspace(false), nspace(ns), object_prefix(pre) {
+	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), is_nspace(true), nspace(ns), object_prefix(pre) {
   }
-  OSDCapMatch(uint64_t auid, std::string pre) : auid(auid), any_nspace(true), object_prefix(pre) {}
+  OSDCapMatch(uint64_t auid, std::string pre) : auid(auid), is_nspace(false), object_prefix(pre) {}
 
   /**
    * check if given request parameters match our constraints

@@ -64,7 +64,7 @@ ostream& operator<<(ostream& out, const OSDCapMatch& m)
   if (m.pool_name.length()) {
     out << "pool " << m.pool_name << " ";
   }
-  if (!m.any_nspace) {
+  if (m.is_nspace) {
     out << "namespace ";
     if (m.nspace.length() == 0)
       out << "\"\"";
@@ -85,7 +85,7 @@ bool OSDCapMatch::is_match(const string& pn, const string& ns, int64_t pool_auid
     if (pool_name != pn)
       return false;
   }
-  if (!any_nspace) {
+  if (is_nspace) {
     if (nspace != ns)
       return false;
   }
@@ -102,7 +102,7 @@ bool OSDCapMatch::is_match_all() const
     return false;
   if (pool_name.length())
     return false;
-  if (!any_nspace)
+  if (is_nspace)
     return false;
   if (object_prefix.length())
     return false;
