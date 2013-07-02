@@ -123,17 +123,13 @@ int KeyRing::set_modifier(const char *type, const char *val, EntityName& name, m
   return 0;
 }
 
-void KeyRing::encode_plaintext(bufferlist& bl)
+void KeyRing::encode_plaintext(std::ostringstream &os)
 {
-  std::ostringstream os;
   print(os);
-  string str = os.str();
-  bl.append(str);
 }
 
-void KeyRing::encode_formatted(Formatter *f, bufferlist& bl)
+void KeyRing::encode_formatted(Formatter *f)
 {
-  std::ostringstream(os);
   f->open_array_section("auth_dump");
   for (map<EntityName, EntityAuth>::iterator p = keys.begin();
        p != keys.end();
@@ -157,8 +153,6 @@ void KeyRing::encode_formatted(Formatter *f, bufferlist& bl)
     f->close_section();	/* auth_entities */
   }
   f->close_section();	/* auth_dump */
-  f->flush(os);
-  bl.append(os.str());
 }
 
 void KeyRing::decode_plaintext(bufferlist::iterator& bli)

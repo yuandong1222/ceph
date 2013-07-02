@@ -463,7 +463,7 @@ int Monitor::preinit()
       dout(1) << "copying mon. key from old db to external keyring" << dendl;
       keyring.add(mon_name, mon_key);
       bufferlist bl;
-      keyring.encode_plaintext(bl);
+      keyring.formatter_encode(NULL, bl);
       write_default_keyring(bl);
     } else {
       derr << "unable to load initial keyring " << g_conf->keyring << dendl;
@@ -4148,7 +4148,7 @@ int Monitor::mkfs(bufferlist& osdmapbl)
   extract_save_mon_key(keyring);
 
   bufferlist keyringbl;
-  keyring.encode_plaintext(keyringbl);
+  keyring.formatter_encode(NULL, keyringbl);
   t.put("mkfs", "keyring", keyringbl);
   write_fsid(t);
   store->apply_transaction(t);
@@ -4188,7 +4188,7 @@ void Monitor::extract_save_mon_key(KeyRing& keyring)
     KeyRing pkey;
     pkey.add(mon_name, mon_key);
     bufferlist bl;
-    pkey.encode_plaintext(bl);
+    pkey.formatter_encode(NULL, bl);
     write_default_keyring(bl);
     keyring.remove(mon_name);
   }

@@ -21,7 +21,7 @@
 #include "auth/Auth.h"
 
 
-class KeyRing : public KeyStore {
+class KeyRing : public KeyStore, public FormatterEncoder {
   map<EntityName, EntityAuth> keys;
 
   int set_modifier(const char *type, const char *val, EntityName& name, map<string, bufferlist>& caps);
@@ -96,8 +96,9 @@ public:
   // encoders
   void decode(bufferlist::iterator& bl);
 
-  void encode_plaintext(bufferlist& bl);
-  void encode_formatted(Formatter *f, bufferlist& bl);
+ protected:
+  virtual void encode_formatted(Formatter *f);
+  virtual void encode_plaintext(std::ostringstream &os);
 };
 
 // don't use WRITE_CLASS_ENCODER macro because we don't have an encode

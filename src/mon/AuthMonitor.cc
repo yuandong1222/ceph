@@ -586,10 +586,7 @@ bool AuthMonitor::preprocess_command(MMonCommand *m)
       if (keyring.get_auth(entity, eauth)) {
 	KeyRing kr;
 	kr.add(entity, eauth);
-	if (f)
-	  kr.encode_formatted(f.get(), rdata);
-	else
-	  kr.encode_plaintext(rdata);
+        kr.formatter_encode(f.get(), rdata);
 	ss << "export " << eauth;
 	r = 0;
       } else {
@@ -597,10 +594,7 @@ bool AuthMonitor::preprocess_command(MMonCommand *m)
 	r = -ENOENT;
       }
     } else {
-      if (f)
-	keyring.encode_formatted(f.get(), rdata);
-      else
-	keyring.encode_plaintext(rdata);
+      keyring.formatter_encode(f.get(), rdata);
 
       ss << "exported master keyring";
       r = 0;
@@ -613,10 +607,7 @@ bool AuthMonitor::preprocess_command(MMonCommand *m)
       r = -ENOENT;
     } else {
       keyring.add(entity, entity_auth);
-      if (f)
-	keyring.encode_formatted(f.get(), rdata);
-      else
-	keyring.encode_plaintext(rdata);
+      keyring.formatter_encode(f.get(), rdata);
       ss << "exported keyring for " << entity_name;
       r = 0;
     }
@@ -689,6 +680,10 @@ bool AuthMonitor::prepare_command(MMonCommand *m)
   EntityName entity;
 
   cmd_getval(g_ceph_context, cmdmap, "prefix", prefix);
+
+  string format;
+  cmd_getval(g_ceph_context, cmdmap, "format", format, string("plain"));
+  boost::scoped_ptr<Formatter> f(new_formatter(format));
 
   MonSession *session = m->get_session();
   if (!session ||
@@ -796,7 +791,7 @@ bool AuthMonitor::prepare_command(MMonCommand *m)
       } else {
 	KeyRing kr;
 	kr.add(entity, entity_auth.key);
-	kr.encode_plaintext(rdata);
+	kr.formatter_encode(f.get(), rdata);
       }
       err = 0;
       goto done;
@@ -835,7 +830,7 @@ bool AuthMonitor::prepare_command(MMonCommand *m)
     } else {
       KeyRing kr;
       kr.add(entity, auth_inc.auth.key);
-      kr.encode_plaintext(rdata);
+      kr.formatter_encode(f.get(), rdata);
     }
 
     rdata.append(ds);
