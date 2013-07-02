@@ -175,12 +175,12 @@ struct OSDCapParser : qi::grammar<Iterator, OSDCap()>
     quoted_string %=
       lexeme['"' >> +(char_ - '"') >> '"'] | 
       lexeme['\'' >> +(char_ - '\'') >> '\''];
-    empty_string %=
-      lexeme['"' >> -(char_ - '"') >> '"'] | 
-      lexeme['\'' >> -(char_ - '\'') >> '\''];
+    equoted_string %=
+      lexeme['"' >> *(char_ - '"') >> '"'] |
+      lexeme['\'' >> *(char_ - '\'') >> '\''];
     unquoted_word %= +char_("a-zA-Z0-9_-");
     str %= quoted_string | unquoted_word;
-    estr %= quoted_string | unquoted_word | empty_string;
+    estr %= equoted_string | unquoted_word;
 
     spaces = +lit(' ');
 
@@ -223,11 +223,9 @@ struct OSDCapParser : qi::grammar<Iterator, OSDCap()>
   }
   qi::rule<Iterator> spaces;
   qi::rule<Iterator, unsigned()> rwxa;
-  qi::rule<Iterator, string()> quoted_string;
-  qi::rule<Iterator, string()> empty_string;
+  qi::rule<Iterator, string()> quoted_string, equoted_string;
   qi::rule<Iterator, string()> unquoted_word;
-  qi::rule<Iterator, string()> str;
-  qi::rule<Iterator, string()> estr;
+  qi::rule<Iterator, string()> str, estr;
   qi::rule<Iterator, int()> auid;
   qi::rule<Iterator, OSDCapSpec()> capspec;
   qi::rule<Iterator, string()> pool_name;

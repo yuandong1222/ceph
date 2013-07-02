@@ -85,8 +85,6 @@ struct OSDCapMatch {
 	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), any_nspace(true), object_prefix(pre) { }
   OSDCapMatch(std::string pl, std::string ns, std::string pre) :
 	auid(CEPH_AUTH_UID_DEFAULT), pool_name(pl), any_nspace(false), nspace(ns), object_prefix(pre) {
-    // HACK: To fix parser generated empty string which has lenght() == 1 and strlen(c._str()) == 0.
-    if (strlen(nspace.c_str()) == 0) nspace = string("");
   }
   OSDCapMatch(uint64_t auid, std::string pre) : auid(auid), any_nspace(true), object_prefix(pre) {}
 
