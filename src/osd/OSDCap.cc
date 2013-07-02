@@ -175,23 +175,24 @@ struct OSDCapParser : qi::grammar<Iterator, OSDCap()>
     quoted_string %=
       lexeme['"' >> +(char_ - '"') >> '"'] | 
       lexeme['\'' >> +(char_ - '\'') >> '\''];
-    quoted_empty_string %=
+    empty_string %=
       lexeme['"' >> -(char_ - '"') >> '"'] | 
       lexeme['\'' >> -(char_ - '\'') >> '\''];
     unquoted_word %= +char_("a-zA-Z0-9_-");
     str %= quoted_string | unquoted_word;
-    estr %= quoted_string | unquoted_word | quoted_empty_string;
+    estr %= quoted_string | unquoted_word | empty_string;
 
     spaces = +lit(' ');
 
     // match := [pool[=]<poolname> [namespace[=]<namespace>] | auid <123>] [object_prefix <prefix>]
     pool_name %= -(spaces >> lit("pool") >> (lit('=') | spaces) >> str);
-    nspace %= -(spaces >> lit("namespace") >> (lit('=') | spaces) >> estr);
+    nspace %= (spaces >> lit("namespace") >> (lit('=') | spaces) >> estr);
     auid %= (spaces >> lit("auid") >> spaces >> int_);
     object_prefix %= -(spaces >> lit("object_prefix") >> spaces >> str);
 
     match = ( (auid >> object_prefix)                 [_val = phoenix::construct<OSDCapMatch>(_1, _2)] |
-	     (pool_name >> nspace >> object_prefix)   [_val = phoenix::construct<OSDCapMatch>(_1, _2, _3)]);
+             (pool_name >> nspace >> object_prefix)   [_val = phoenix::construct<OSDCapMatch>(_1, _2, _3)] |
+             (pool_name >> object_prefix)             [_val = phoenix::construct<OSDCapMatch>(_1, _2)]);
 
     // rwxa := * | [r][w][x] [class-read] [class-write]
     rwxa =
@@ -223,7 +224,7 @@ struct OSDCapParser : qi::grammar<Iterator, OSDCap()>
   qi::rule<Iterator> spaces;
   qi::rule<Iterator, unsigned()> rwxa;
   qi::rule<Iterator, string()> quoted_string;
-  qi::rule<Iterator, string()> quoted_empty_string;
+  qi::rule<Iterator, string()> empty_string;
   qi::rule<Iterator, string()> unquoted_word;
   qi::rule<Iterator, string()> str;
   qi::rule<Iterator, string()> estr;
