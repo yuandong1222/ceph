@@ -10,6 +10,8 @@
 #include <stdarg.h>
 #include <string>
 
+#include "include/buffer.h"
+
 namespace ceph {
 
 
@@ -93,6 +95,33 @@ class JSONFormatter : public Formatter {
   std::list<json_formatter_stack_entry_d> m_stack;
   bool m_is_pending_string;
 };
+
+/**
+ * FormatterEncoder
+ *
+ * To be used by classes wanting to mark themselves as willing to encode
+ * their contents in a Formatter and/or plaintext.  Classes extending us
+ * are responsible for implementing these functions.
+ */
+struct FormatterEncoder {
+  virtual void formatter_encode(Formatter *f, bufferlist &bl) {
+    std::ostringstream os;
+    if (f) {
+      encode_formatted(f);
+      f->flush(os);
+    } else {
+      encode_plaintext(os);
+    }
+    bl.append(os.str());
+  }
+
+  virtual ~FormatterEncoder() { }
+
+ protected:
+  virtual void encode_formatted(Formatter *f) = 0;
+  virtual void encode_plaintext(std::ostringstream &os) = 0;
+};
+
 
 class XMLFormatter : public Formatter {
  public:
