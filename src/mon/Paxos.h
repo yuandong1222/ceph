@@ -1193,7 +1193,7 @@ public:
 
     if (trim_disabled_version > 0) {
       int disabled_versions = (get_version() - trim_disabled_version);
-      if (disabled_versions < g_conf->paxos_trim_disabled_max_versions)
+      if (disabled_versions < (g_conf->paxos_trim_disabled_max_versions + g_conf->paxos_trim_max))
 	return false;
     }
     return true;
