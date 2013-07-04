@@ -142,7 +142,6 @@ Monitor::Monitor(CephContext* cct_, string nm, MonitorDBStore *s,
 
   // trim & store sync
   sync_role(SYNC_ROLE_NONE),
-  trim_lock("Monitor::trim_lock"),
   trim_enable_timer(NULL),
   sync_rng(getpid()),
   sync_state(SYNC_STATE_NONE),
@@ -871,7 +870,6 @@ void Monitor::handle_sync_start(MMonSync *m)
   // than they do, so it makes sense to let them try their luck and join the
   // party.
 
-  Mutex::Locker l(trim_lock);
   entity_inst_t other =
     (m->flags & MMonSync::FLAG_REPLY_TO ? m->reply_to : m->get_source_inst());
 
@@ -994,8 +992,6 @@ void Monitor::sync_finish(entity_inst_t &entity, bool abort)
 {
   dout(10) << __func__ << " entity(" << entity << ")" << dendl;
 
-  Mutex::Locker l(trim_lock);
-
   if (!trim_timeouts.count(entity)) {
     dout(1) << __func__ << " we know of no sync effort from "
 	    << entity << " -- ignore it." << dendl;
@@ -1031,6 +1027,21 @@ void Monitor::sync_finish(entity_inst_t &entity, bool abort)
   }
 
   finish_contexts(g_ceph_context, maybe_wait_for_quorum);
+}
+
+void Monitor::_trim_enable()
+{
+  // even if we are no longer the leader, we should re-enable trim if
+  // we have disabled it in the past. It doesn't mean we are going to
+  // do anything about it, but if we happen to become the leader
+  // sometime down the future, we sure want to have the trim enabled.
+  if (trim_timeouts.empty()) {
+    dout(10) << __func__ << " enabling" << dendl;
+    paxos->trim_enable();
+  } else {
+    dout(10) << __func__ << " NOT enabling" << dendl;
+  }
+  trim_enable_timer = NULL;
 }
 
 void Monitor::handle_sync_finish(MMonSync *m)
@@ -2213,7 +2224,6 @@ void Monitor::_sync_status(ostream& ss)
   jf.dump_unsigned("paxos_version", paxos->get_version());
 
   if (is_leader() || (sync_role == SYNC_ROLE_LEADER)) {
-    Mutex::Locker l(trim_lock);
     jf.open_object_section("trim");
     jf.dump_int("disabled", paxos->is_trim_disabled());
     jf.dump_int("should_trim", paxos->should_trim());

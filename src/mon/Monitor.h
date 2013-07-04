@@ -280,19 +280,6 @@ private:
    * @{
    */
   /**
-   * Guarantee mutual exclusion access to the @p trim_timeouts map.
-   *
-   * We need this mutex specially when we have a monitor starting a sync with
-   * the leader and another one finishing or aborting an on-going sync, that
-   * happens to be the last on-going trim on the map. Given that we will
-   * enable the Paxos trim once we deplete the @p trim_timeouts map, we must
-   * then ensure that we either add the new sync start to the map before
-   * removing the one just finishing, or that we remove the finishing one
-   * first and enable the trim before we add the new one. If we fail to do
-   * this, nasty repercussions could follow.
-   */
-  Mutex trim_lock;
-  /**
    * Map holding all on-going syncs' timeouts.
    *
    * An on-going sync leads to the Paxos trim to be suspended, and this map
@@ -350,16 +337,11 @@ private:
 
     C_TrimEnable(Monitor *m) : mon(m) { }
     void finish(int r) {
-      Mutex::Locker(mon->trim_lock);
-      // even if we are no longer the leader, we should re-enable trim if
-      // we have disabled it in the past. It doesn't mean we are going to
-      // do anything about it, but if we happen to become the leader
-      // sometime down the future, we sure want to have the trim enabled.
-      if (mon->trim_timeouts.empty())
-	mon->paxos->trim_enable();
-      mon->trim_enable_timer = NULL;
+      mon->_trim_enable();
     }
   };
+
+  void _trim_enable();
 
   void sync_obtain_latest_monmap(bufferlist &bl);
   void sync_store_init();
