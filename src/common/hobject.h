@@ -47,6 +47,9 @@ public:
   const string &get_key() const {
     return key;
   }
+  uint32_t get_hash() const {
+    return hash;
+  }
 
   string to_str() const;
 
@@ -223,7 +226,7 @@ WRITE_EQ_OPERATORS_7(hobject_t, oid, get_key(), snap, hash, max, pool, nspace)
 // sort hobject_t's by <max, get_filestore_key(hash), key, oid, snapid>
 WRITE_CMP_OPERATORS_7(hobject_t,
 		      max,
-		      get_filestore_key(),
+		      get_hash(),
 		      nspace,
 		      pool,
 		      get_effective_key(),

@@ -300,7 +300,8 @@ int HashIndex::_lookup(const ghobject_t &oid,
 		       string *mangled_name,
 		       int *exists_out) {
   vector<string> path_comp;
-  get_path_components(oid, &path_comp);
+  uint32_t filestore_key = (uint32_t)oid.hobj.get_filestore_key();
+  get_path_components(oid, filestore_key, &path_comp);
   vector<string>::iterator next = path_comp.begin();
   int exists;
   while (1) {
@@ -643,7 +644,8 @@ int HashIndex::complete_split(const vector<string> &path, subdir_info_s info) {
        i != objects.end();
        ++i) {
     vector<string> new_path;
-    get_path_components(i->second, &new_path);
+    uint32_t filestore_key = (uint32_t)i->second.hobj.get_filestore_key();
+    get_path_components(i->second, filestore_key, &new_path);
     mapped[new_path[level]][i->first] = i->second;
   }
   for (map<string, map<string, ghobject_t> >::iterator i = mapped.begin();
@@ -724,10 +726,10 @@ int HashIndex::complete_split(const vector<string> &path, subdir_info_s info) {
   return end_split_or_merge(path);
 }
 
-void HashIndex::get_path_components(const ghobject_t &oid,
+void HashIndex::get_path_components(const ghobject_t &oid, uint32_t filestore_key,
 				    vector<string> *path) {
   char buf[MAX_HASH_LEVEL + 1];
-  snprintf(buf, sizeof(buf), "%.*X", MAX_HASH_LEVEL, (uint32_t)oid.hobj.get_filestore_key());
+  snprintf(buf, sizeof(buf), "%.*X", MAX_HASH_LEVEL, filestore_key);
 
   // Path components are the hex characters of oid.hobj.hash, least
   // significant first

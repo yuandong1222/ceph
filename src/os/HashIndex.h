@@ -273,8 +273,9 @@ private:
 
   /// Determine path components from hoid hash
   void get_path_components(
-    const ghobject_t &oid, ///< [in] Object for which to get path components
-    vector<string> *path   ///< [out] Path components for hoid.
+    const ghobject_t &oid,        ///< [in] Object for which to get path components
+    const uint32_t filestore_key, ///< [in] filestore_key of oid 
+    vector<string> *path          ///< [out] Path components for hoid.
     );
 
   /// Pre-hash and split folders to avoid runtime splitting
