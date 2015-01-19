@@ -808,24 +808,23 @@ void ECBackend::handle_sub_write(
   assert(!get_parent()->get_log().get_missing().is_missing(op.soid));
   if (!get_parent()->pgb_is_primary())
     get_parent()->update_stats(op.stats);
-  ObjectStore::Transaction *localt = new ObjectStore::Transaction;
-  localt->set_use_tbl(op.t.get_use_tbl());
+  ObjectStore::Transaction localt;
   if (!op.temp_added.empty()) {
-    get_temp_coll(localt);
+    get_temp_coll(&localt);
     add_temp_objs(op.temp_added);
   }
   if (op.t.empty()) {
     for (set<hobject_t>::iterator i = op.temp_removed.begin();
-	 i != op.temp_removed.end();
-	 ++i) {
+         i != op.temp_removed.end();
+         ++i) {
       dout(10) << __func__ << ": removing object " << *i
-	       << " since we won't get the transaction" << dendl;
-      localt->remove(
-	temp_coll,
-	ghobject_t(
-	  *i,
-	  ghobject_t::NO_GEN,
-	  get_parent()->whoami_shard().shard));
+               << " since we won't get the transaction" << dendl;
+      localt.remove(
+        temp_coll,
+        ghobject_t(
+          *i,
+          ghobject_t::NO_GEN,
+          get_parent()->whoami_shard().shard));
     }
   }
   clear_temp_objs(op.temp_removed);
@@ -835,29 +834,27 @@ void ECBackend::handle_sub_write(
     op.trim_to,
     op.trim_rollback_to,
     !(op.t.empty()),
-    localt);
+    &localt);
 
   if (!(dynamic_cast<ReplicatedPG *>(get_parent())->is_undersized()) &&
       get_parent()->whoami_shard().shard >= ec_impl->get_data_chunk_count())
     op.t.set_fadvise_flag(CEPH_OSD_OP_FLAG_FADVISE_DONTNEED);
 
-  localt->append(op.t);
+  op.t.append(localt);
   if (on_local_applied_sync) {
     dout(10) << "Queueing onreadable_sync: " << on_local_applied_sync << dendl;
-    localt->register_on_applied_sync(on_local_applied_sync);
+    op.t.register_on_applied_sync(on_local_applied_sync);
   }
-  localt->register_on_commit(
+  op.t.register_on_commit(
     get_parent()->bless_context(
       new SubWriteCommitted(
-	this, msg, op.tid,
-	op.at_version,
-	get_parent()->get_info().last_complete)));
-  localt->register_on_applied(
+        this, msg, op.tid,
+        op.at_version,
+        get_parent()->get_info().last_complete)));
+  op.t.register_on_applied(
     get_parent()->bless_context(
       new SubWriteApplied(this, msg, op.tid, op.at_version)));
-  localt->register_on_applied(
-    new ObjectStore::C_DeleteTransaction(localt));
-  get_parent()->queue_transaction(localt, msg);
+  get_parent()->queue_transaction(&(op.t), msg);
 }
 
 void ECBackend::handle_sub_read(
